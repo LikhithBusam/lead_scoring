@@ -1,0 +1,51 @@
+import rateLimit from 'express-rate-limit';
+
+// General API rate limiter - 100 requests per 15 minutes
+export const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: {
+    error: 'Too many requests from this IP, please try again later.',
+    code: 'RATE_LIMIT_EXCEEDED'
+  },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+// Strict rate limiter for authentication endpoints - 5 requests per 15 minutes
+export const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: {
+    error: 'Too many authentication attempts, please try again later.',
+    code: 'AUTH_RATE_LIMIT_EXCEEDED'
+  },
+  skipSuccessfulRequests: true, // Don't count successful requests
+});
+
+// Activity tracking limiter - 50 requests per minute (high volume expected)
+export const activityLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 50,
+  message: {
+    error: 'Too many activity tracking requests, please slow down.',
+    code: 'ACTIVITY_RATE_LIMIT_EXCEEDED'
+  },
+});
+
+// Company research limiter - 10 requests per hour (expensive AI operation)
+export const researchLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10,
+  message: {
+    error: 'Too many research requests, please try again later. Limit: 10 per hour.',
+    code: 'RESEARCH_RATE_LIMIT_EXCEEDED'
+  },
+});
+
+export default {
+  apiLimiter,
+  authLimiter,
+  activityLimiter,
+  researchLimiter
+};
