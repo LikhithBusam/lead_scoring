@@ -44,6 +44,31 @@ const CompanySelector = ({ onSelectCompany, currentCompany }) => {
         }
     }
 
+    // Quick connect with demo API key
+    const handleQuickConnect = async (apiKey) => {
+        setVerifyingKey(true)
+        setError('')
+
+        try {
+            const response = await fetch('/api/v1/tenants/me', {
+                headers: { 'X-API-Key': apiKey }
+            })
+            const data = await response.json()
+
+            if (data.success) {
+                const company = { ...data.tenant, api_key: apiKey }
+                saveCompanyToList(company)
+                onSelectCompany(company)
+            } else {
+                setError('Failed to connect to demo account')
+            }
+        } catch (err) {
+            setError('Failed to connect. Is the server running?')
+        } finally {
+            setVerifyingKey(false)
+        }
+    }
+
     // Verify API key and load company
     const handleVerifyApiKey = async () => {
         if (!apiKeyInput.trim()) {
@@ -328,6 +353,38 @@ const CompanySelector = ({ onSelectCompany, currentCompany }) => {
                         {error}
                     </div>
                 )}
+
+                {/* Demo Accounts Quick Access */}
+                <div className="mt-6 bg-yellow-500/10 backdrop-blur-lg rounded-2xl p-6 border border-yellow-500/30">
+                    <h3 className="text-lg font-semibold text-yellow-300 mb-3">🚀 Quick Demo Access</h3>
+                    <p className="text-sm text-slate-300 mb-4">
+                        Use these test accounts to see leads from the demo websites:
+                    </p>
+                    <div className="grid md:grid-cols-2 gap-4">
+                        <div className="bg-white/5 rounded-lg p-4">
+                            <p className="font-medium text-white mb-1">☁️ CloudFlow (vinaykumar)</p>
+                            <p className="text-xs text-slate-400 mb-2">SaaS demo site leads</p>
+                            <button
+                                onClick={() => handleQuickConnect('lsk_5d9ff8f05646dcd6800d0e61d38846f77c374a4a201654cfefc44e65bdbb7db7')}
+                                disabled={verifyingKey}
+                                className="w-full py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                            >
+                                {verifyingKey ? 'Connecting...' : 'Connect CloudFlow'}
+                            </button>
+                        </div>
+                        <div className="bg-white/5 rounded-lg p-4">
+                            <p className="font-medium text-white mb-1">⚡ TechGear (TechCorp)</p>
+                            <p className="text-xs text-slate-400 mb-2">E-commerce demo site leads</p>
+                            <button
+                                onClick={() => handleQuickConnect('lsk_7912d8b2be8246cca164d342dc2b2fa1d30b2b58f1cb75aeddb2d914433cec43')}
+                                disabled={verifyingKey}
+                                className="w-full py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
+                            >
+                                {verifyingKey ? 'Connecting...' : 'Connect TechGear'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
 
                 {/* Footer */}
                 <div className="text-center mt-8 text-slate-500 text-sm">

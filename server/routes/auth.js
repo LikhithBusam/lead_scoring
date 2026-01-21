@@ -20,7 +20,8 @@ const registerSchema = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters'),
   firstName: z.string().min(1, 'First name is required').max(100),
   lastName: z.string().min(1, 'Last name is required').max(100),
-  role: z.enum(['admin', 'sales', 'user']).default('user')
+  role: z.enum(['admin', 'sales', 'user']).default('user'),
+  tenantId: z.string().uuid().optional() // Optional: link to existing tenant
 });
 
 const loginSchema = z.object({
@@ -40,7 +41,7 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    const { email, password, firstName, lastName, role } = validationResult.data;
+    const { email, password, firstName, lastName, role, tenantId } = validationResult.data;
 
     // Check if user already exists
     const { data: existingUser } = await supabase
@@ -56,10 +57,29 @@ router.post('/register', async (req, res) => {
       });
     }
 
+    // If tenantId provided, verify it exists
+    let tenant = null;
+    if (tenantId) {
+      const { data: tenantData, error: tenantError } = await supabase
+        .from('tenants')
+        .select('tenant_id, company_name, api_key, plan_type')
+        .eq('tenant_id', tenantId)
+        .eq('is_active', true)
+        .single();
+
+      if (tenantError || !tenantData) {
+        return res.status(404).json({
+          error: 'Tenant not found',
+          code: 'TENANT_NOT_FOUND'
+        });
+      }
+      tenant = tenantData;
+    }
+
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // Create user in database
+    // Create user in database (with tenant_id if provided)
     const { data: newUser, error: userError } = await supabase
       .from('users')
       .insert({
@@ -68,10 +88,11 @@ router.post('/register', async (req, res) => {
         first_name: firstName,
         last_name: lastName,
         role,
+        tenant_id: tenantId || null,
         is_active: true,
         created_at: new Date().toISOString()
       })
-      .select('user_id, email, first_name, last_name, role')
+      .select('user_id, email, first_name, last_name, role, tenant_id')
       .single();
 
     if (userError) {
@@ -92,8 +113,16 @@ router.post('/register', async (req, res) => {
         email: newUser.email,
         firstName: newUser.first_name,
         lastName: newUser.last_name,
-        role: newUser.role
+        role: newUser.role,
+        tenantId: newUser.tenant_id
       },
+      // Include tenant info if user was linked to a company
+      tenant: tenant ? {
+        tenantId: tenant.tenant_id,
+        companyName: tenant.company_name,
+        apiKey: tenant.api_key,
+        planType: tenant.plan_type
+      } : null,
       token
     });
   } catch (error) {
@@ -119,10 +148,10 @@ router.post('/login', async (req, res) => {
 
     const { email, password } = validationResult.data;
 
-    // Find user by email
+    // Find user by email (including tenant_id for company context)
     const { data: user, error: userError } = await supabase
       .from('users')
-      .select('user_id, email, password_hash, first_name, last_name, role, is_active')
+      .select('user_id, email, password_hash, first_name, last_name, role, is_active, tenant_id')
       .eq('email', email)
       .single();
 
@@ -150,14 +179,27 @@ router.post('/login', async (req, res) => {
       });
     }
 
+    // Fetch tenant information if user is linked to a tenant
+    let tenant = null;
+    if (user.tenant_id) {
+      const { data: tenantData } = await supabase
+        .from('tenants')
+        .select('tenant_id, company_name, domain, plan_type, api_key, is_active')
+        .eq('tenant_id', user.tenant_id)
+        .eq('is_active', true)
+        .single();
+      
+      tenant = tenantData;
+    }
+
     // Update last login
     await supabase
       .from('users')
       .update({ last_login_at: new Date().toISOString() })
       .eq('user_id', user.user_id);
 
-    // Generate JWT token
-    const token = generateToken(user.user_id, user.email, user.role);
+    // Generate JWT token (include tenant_id for company context)
+    const token = generateToken(user.user_id, user.email, user.role, user.tenant_id);
 
     res.json({
       message: 'Login successful',
@@ -166,8 +208,17 @@ router.post('/login', async (req, res) => {
         email: user.email,
         firstName: user.first_name,
         lastName: user.last_name,
-        role: user.role
+        role: user.role,
+        tenantId: user.tenant_id
       },
+      // Include tenant info if user belongs to a company
+      tenant: tenant ? {
+        tenantId: tenant.tenant_id,
+        companyName: tenant.company_name,
+        domain: tenant.domain,
+        planType: tenant.plan_type,
+        apiKey: tenant.api_key
+      } : null,
       token
     });
   } catch (error) {

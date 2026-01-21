@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pricing - CloudFlow SaaS</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- LEAD SCORING TRACKING SCRIPT -->
+    <script
+      src="http://localhost:3001/tracking-plugin/lead-scorer.js"
+      data-website-id="19db0175-0223-4795-80f8-163e07365aa4"
+      data-api-key="lsk_d95033840f4cc8b3f1d055e5c9ee1070b8f5fc9e3549b42dfd8d1e239f8d3e24"
+      data-api-url="http://localhost:3001/api/v1"
+      data-debug="true">
+    </script>
+
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">☁️ CloudFlow</div>
+            <ul class="nav-menu">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="features.html">Features</a></li>
+                <li><a href="pricing.html" class="active">Pricing</a></li>
+                <li><a href="contact.html">Contact</a></li>
+            </ul>
+            <div class="nav-buttons" id="navButtons">
+                <a href="login.html" class="btn-login">Login</a>
+                <a href="signup.html" class="btn-signup">Sign Up</a>
+                <button class="cta-btn" onclick="handleDemoClick()">Request Demo</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="page-header">
+        <div class="container">
+            <h1>Simple, Transparent Pricing</h1>
+            <p>Choose the plan that fits your team size and needs</p>
+        </div>
+    </div>
+
+    <section class="pricing-section">
+        <div class="container">
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <h3>Starter</h3>
+                    <div class="price">$29<span>/month</span></div>
+                    <p class="plan-desc">Perfect for small teams</p>
+                    <ul class="plan-features">
+                        <li>✓ Up to 10 users</li>
+                        <li>✓ 5 GB storage</li>
+                        <li>✓ Basic analytics</li>
+                        <li>✓ Email support</li>
+                        <li>✗ Advanced automation</li>
+                        <li>✗ Custom integrations</li>
+                    </ul>
+                    <button class="btn-secondary" onclick="handlePlanClick('Starter')">Start Free Trial</button>
+                </div>
+
+                <div class="pricing-card featured">
+                    <div class="badge">Most Popular</div>
+                    <h3>Professional</h3>
+                    <div class="price">$79<span>/month</span></div>
+                    <p class="plan-desc">For growing businesses</p>
+                    <ul class="plan-features">
+                        <li>✓ Up to 50 users</li>
+                        <li>✓ 50 GB storage</li>
+                        <li>✓ Advanced analytics</li>
+                        <li>✓ Priority support</li>
+                        <li>✓ Workflow automation</li>
+                        <li>✓ 50+ integrations</li>
+                    </ul>
+                    <button class="btn-primary" onclick="handlePlanClick('Professional')">Start Free Trial</button>
+                </div>
+
+                <div class="pricing-card">
+                    <h3>Enterprise</h3>
+                    <div class="price">Custom</div>
+                    <p class="plan-desc">For large organizations</p>
+                    <ul class="plan-features">
+                        <li>✓ Unlimited users</li>
+                        <li>✓ Unlimited storage</li>
+                        <li>✓ Custom analytics</li>
+                        <li>✓ Dedicated support</li>
+                        <li>✓ Advanced automation</li>
+                        <li>✓ Custom integrations</li>
+                    </ul>
+                    <button class="btn-secondary" onclick="handleDemoClick()">Contact Sales</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="faq-section">
+        <div class="container">
+            <h2>Frequently Asked Questions</h2>
+            <div class="faq-grid">
+                <div class="faq-item">
+                    <h4>Can I change plans later?</h4>
+                    <p>Yes! You can upgrade or downgrade at any time. Changes take effect immediately.</p>
+                </div>
+                <div class="faq-item">
+                    <h4>Is there a free trial?</h4>
+                    <p>All plans include a 14-day free trial. No credit card required.</p>
+                </div>
+                <div class="faq-item">
+                    <h4>What payment methods do you accept?</h4>
+                    <p>We accept all major credit cards, PayPal, and wire transfer for Enterprise plans.</p>
+                </div>
+                <div class="faq-item">
+                    <h4>Can I cancel anytime?</h4>
+                    <p>Yes, you can cancel your subscription at any time. No questions asked.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 CloudFlow SaaS. All rights reserved.</p>
+            <div class="footer-links">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Service</a>
+                <a href="contact.html">Support</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CloudFlow SaaS - Project Management Made Simple</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- LEAD SCORING TRACKING SCRIPT -->
+    <script
+      src="http://localhost:3001/tracking-plugin/lead-scorer.js"
+      data-website-id="19db0175-0223-4795-80f8-163e07365aa4"
+      data-api-key="lsk_d95033840f4cc8b3f1d055e5c9ee1070b8f5fc9e3549b42dfd8d1e239f8d3e24"
+      data-api-url="http://localhost:3001/api/v1"
+      data-debug="true">
+    </script>
+
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">☁️ CloudFlow</div>
+            <ul class="nav-menu">
+                <li><a href="index.html" class="active">Home</a></li>
+                <li><a href="features.html">Features</a></li>
+                <li><a href="pricing.html">Pricing</a></li>
+                <li><a href="contact.html">Contact</a></li>
+            </ul>
+            <div class="nav-buttons" id="navButtons">
+                <!-- Will be populated by JavaScript based on login state -->
+                <a href="login.html" class="btn-login">Login</a>
+                <a href="signup.html" class="btn-signup">Sign Up</a>
+                <button class="cta-btn" onclick="handleDemoClick()">Request Demo</button>
+            </div>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="hero-content">
+            <h1>Manage Projects Like a Pro</h1>
+            <p>CloudFlow helps teams collaborate, track progress, and deliver projects faster. Join 10,000+ companies already using CloudFlow.</p>
+            <div class="hero-buttons">
+                <button class="btn-primary" onclick="handleDemoClick()">Request Demo</button>
+                <button class="btn-secondary" onclick="handleLearnMore()">Learn More</button>
+            </div>
+        </div>
+    </header>
+
+    <section class="features-preview">
+        <div class="container">
+            <h2>Why Teams Love CloudFlow</h2>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Real-time Dashboards</h3>
+                    <p>Track project progress with beautiful, intuitive dashboards</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">👥</div>
+                    <h3>Team Collaboration</h3>
+                    <p>Work together seamlessly with built-in chat and file sharing</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔔</div>
+                    <h3>Smart Notifications</h3>
+                    <p>Stay updated with intelligent alerts and reminders</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="cta-section">
+        <div class="container">
+            <h2>Ready to Transform Your Workflow?</h2>
+            <p>Start your 14-day free trial today. No credit card required.</p>
+            <button class="btn-large" onclick="handleDemoClick()">Request Demo</button>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 CloudFlow SaaS. All rights reserved.</p>
+            <div class="footer-links">
+                <a href="#">Privacy Policy</a>
+                <a href="#">Terms of Service</a>
+                <a href="contact.html">Support</a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

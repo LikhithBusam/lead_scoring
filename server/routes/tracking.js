@@ -31,6 +31,15 @@ const DEDUP_WINDOWS = {
  * Step 143: Added tenant limits check
  */
 router.post('/track', authenticateTenant, checkTenantLimits, async (req, res) => {
+  console.log('📥 TRACKING REQUEST RECEIVED:', {
+    headers: {
+      'x-api-key': req.headers['x-api-key']?.substring(0, 20) + '...',
+      'x-website-id': req.headers['x-website-id']
+    },
+    query: req.query,
+    body: req.body?.event_type
+  });
+  
   try {
     const { event_type, visitor_id, session_id, data, metadata } = req.body;
     const tenant = req.tenant;
@@ -108,13 +117,15 @@ async function handlePageView(tenant, website, visitorId, data) {
       });
 
     // Also increment visit count if page already discovered
-    await supabase.rpc('increment_page_visit', {
-      p_website_id: website.website_id,
-      p_page_url: page_url
-    }).catch(() => {
+    try {
+      await supabase.rpc('increment_page_visit', {
+        p_website_id: website.website_id,
+        p_page_url: page_url
+      });
+    } catch (rpcError) {
       // Ignore error if RPC function doesn't exist yet
       // The upsert above will still work
-    });
+    }
 
     // Page not configured for tracking - still log but no points
     return {
@@ -148,6 +159,24 @@ async function handlePageView(tenant, website, visitorId, data) {
     };
   }
 
+  // Step 40a: Check if this visitor is already identified (has a contact)
+  // This links future page views to known leads
+  let contactId = null;
+  let leadId = null;
+  const { data: existingActivity } = await supabase
+    .from('lead_activities')
+    .select('contact_id, lead_id')
+    .eq('tenant_id', tenant.tenant_id)
+    .eq('visitor_id', visitorId)
+    .not('contact_id', 'is', null)
+    .limit(1)
+    .single();
+
+  if (existingActivity) {
+    contactId = existingActivity.contact_id;
+    leadId = existingActivity.lead_id;
+  }
+
   // Step 40: Insert activity record
   const { data: activity, error: activityError } = await supabase
     .from('lead_activities')
@@ -155,6 +184,8 @@ async function handlePageView(tenant, website, visitorId, data) {
       tenant_id: tenant.tenant_id,
       website_id: website.website_id,
       visitor_id: visitorId,
+      contact_id: contactId,  // Link to known contact
+      lead_id: leadId,        // Link to known lead
       activity_type: 'page_view',
       activity_subtype: page.page_category,
       page_url,
@@ -289,6 +320,9 @@ async function handleFormSubmission(tenant, website, visitorId, data) {
   const { email, name, company, phone, fields, timestamp } = data;
 
   // Always track form submissions (no deduplication)
+  // High points for form submission - this is a strong buying signal
+  const FORM_SUBMISSION_POINTS = 50;
+  
   const { data: activity, error: activityError } = await supabase
     .from('lead_activities')
     .insert({
@@ -297,7 +331,7 @@ async function handleFormSubmission(tenant, website, visitorId, data) {
       visitor_id: visitorId,
       activity_type: 'form_submission',
       page_url: data.page_url,
-      points_earned: 25, // Fixed points for form submission
+      points_earned: FORM_SUBMISSION_POINTS,
       activity_timestamp: timestamp || new Date().toISOString(),
       activity_details: data
     })
@@ -407,8 +441,8 @@ async function handleFormSubmission(tenant, website, visitorId, data) {
       contact_id: newContact.contact_id,
       company_id: companyId,
       lead_source: 'website',
-      lead_status: 'new',
-      current_stage: 'awareness'
+      lead_status: 'active',
+      current_stage: 'new'
     })
     .select()
     .single();

@@ -26,9 +26,10 @@ const supabase = createClient(
  */
 export async function authenticateTenant(req, res, next) {
   try {
-    // Step 32: Extract API key from request headers
-    const apiKey = req.headers['x-api-key'];
-    const websiteId = req.headers['x-website-id'];
+    // Step 32: Extract API key from request headers OR query parameters
+    // Query parameters are used by sendBeacon (page exit events)
+    const apiKey = req.headers['x-api-key'] || req.query.api_key;
+    const websiteId = req.headers['x-website-id'] || req.query.website_id;
 
     if (!apiKey) {
       return res.status(401).json({

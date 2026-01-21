@@ -152,6 +152,51 @@ router.get('/leads/:id', authenticateTenant, async (req, res) => {
 });
 
 /**
+ * POST /api/v1/leads/:id/recalculate-score - Recalculate lead score
+ */
+router.post('/leads/:id/recalculate-score', authenticateTenant, async (req, res) => {
+  try {
+    const tenant = req.tenant;
+    const leadId = parseInt(req.params.id);
+
+    // Verify lead belongs to tenant
+    const { data: lead, error: leadError } = await supabase
+      .from('leads')
+      .select('lead_id')
+      .eq('lead_id', leadId)
+      .eq('tenant_id', tenant.tenant_id)
+      .single();
+
+    if (leadError || !lead) {
+      return res.status(404).json({
+        error: 'Lead not found'
+      });
+    }
+
+    // Recalculate score
+    const scoreData = await calculateLeadScoreMultiTenant(tenant.tenant_id, leadId);
+
+    console.log(`✅ Score recalculated for lead ${leadId}: ${scoreData.totalScore} (${scoreData.classification})`);
+
+    res.json({
+      success: true,
+      lead_id: leadId,
+      score: scoreData.totalScore,
+      classification: scoreData.classification,
+      breakdown: scoreData.breakdown,
+      matchedRules: scoreData.matchedRules
+    });
+
+  } catch (error) {
+    console.error('Error recalculating score:', error);
+    res.status(500).json({
+      error: 'Failed to recalculate score',
+      message: error.message
+    });
+  }
+});
+
+/**
  * Step 60: GET /api/v1/leads/:id/activities - Get activity timeline for lead
  */
 router.get('/leads/:id/activities', authenticateTenant, async (req, res) => {
@@ -159,10 +204,10 @@ router.get('/leads/:id/activities', authenticateTenant, async (req, res) => {
     const tenant = req.tenant;
     const leadId = parseInt(req.params.id);
 
-    // Verify lead belongs to tenant
+    // Verify lead belongs to tenant and get contact_id
     const { data: lead } = await supabase
       .from('leads')
-      .select('lead_id')
+      .select('lead_id, contact_id')
       .eq('lead_id', leadId)
       .eq('tenant_id', tenant.tenant_id)
       .single();
@@ -173,12 +218,13 @@ router.get('/leads/:id/activities', authenticateTenant, async (req, res) => {
       });
     }
 
-    // Get activities filtered by tenant and lead
+    // Get activities filtered by tenant and lead OR contact
+    // This ensures we get activities even if lead_id wasn't set on some
     const { data: activities, error } = await supabase
       .from('lead_activities')
       .select('*')
       .eq('tenant_id', tenant.tenant_id)
-      .eq('lead_id', leadId)
+      .or(`lead_id.eq.${leadId},contact_id.eq.${lead.contact_id}`)
       .order('activity_timestamp', { ascending: false });
 
     if (error) {

@@ -18,10 +18,14 @@ const supabase = createClient(
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
 
-// Generate JWT token
-export function generateToken(userId, email, role = 'user') {
+// Generate JWT token (now includes optional tenantId for company context)
+export function generateToken(userId, email, role = 'user', tenantId = null) {
+  const payload = { userId, email, role };
+  if (tenantId) {
+    payload.tenantId = tenantId;
+  }
   return jwt.sign(
-    { userId, email, role },
+    payload,
     JWT_SECRET,
     { expiresIn: JWT_EXPIRES_IN }
   );

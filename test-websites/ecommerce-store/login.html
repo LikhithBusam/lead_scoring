@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - TechGear Store</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- LEAD SCORING TRACKING SCRIPT - mantify -->
+    <script
+      src="http://localhost:3001/tracking-plugin/lead-scorer.js"
+      data-website-id="b780c4ba-91aa-4a6e-82f8-dae91f3a6065"
+      data-api-key="lsk_f4ba38b57529530bda94d71945a864cff89dee9d8b10a2cf826867ad9491af01"
+      data-api-url="http://localhost:3001/api/v1"
+      data-debug="true">
+    </script>
+
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">⚡ TechGear</div>
+            <ul class="nav-menu">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="products.html">Products</a></li>
+                <li><a href="cart.html">Cart <span id="cart-count" class="cart-badge">0</span></a></li>
+            </ul>
+            <div class="nav-actions" id="navButtons">
+                <a href="signup.html" class="btn-signup">Sign Up</a>
+            </div>
+        </div>
+    </nav>
+
+    <section class="auth-section">
+        <div class="auth-container">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <h1>Welcome Back!</h1>
+                    <p>Login to continue shopping</p>
+                </div>
+
+                <form id="loginForm" class="auth-form" onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label for="email">Email Address</label>
+                        <input
+                            type="email"
+                            id="email"
+                            name="email"
+                            required
+                            placeholder="you@example.com"
+                            autocomplete="email"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input
+                            type="password"
+                            id="password"
+                            name="password"
+                            required
+                            placeholder="Enter your password"
+                            autocomplete="current-password"
+                            minlength="6"
+                        >
+                    </div>
+
+                    <div class="form-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="remember" id="remember">
+                            <span>Keep me logged in</span>
+                        </label>
+                        <a href="#" class="link-text">Forgot password?</a>
+                    </div>
+
+                    <button type="submit" class="btn-primary btn-full">Login to Account</button>
+
+                    <div class="form-divider">
+                        <span>or login with</span>
+                    </div>
+
+                    <div class="social-login">
+                        <button type="button" class="btn-social" onclick="handleSocialLogin('google')">
+                            <span>🔍</span> Google
+                        </button>
+                        <button type="button" class="btn-social" onclick="handleSocialLogin('facebook')">
+                            <span>📘</span> Facebook
+                        </button>
+                    </div>
+
+                    <div class="auth-footer">
+                        <p>Don't have an account? <a href="signup.html" class="link-primary">Create one now</a></p>
+                    </div>
+                </form>
+            </div>
+
+            <div class="auth-benefits">
+                <h2>Member Benefits</h2>
+                <ul class="benefits-list">
+                    <li>
+                        <div class="benefit-icon">🚚</div>
+                        <div>
+                            <h3>Free Shipping</h3>
+                            <p>On orders over $50 for members only</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="benefit-icon">💎</div>
+                        <div>
+                            <h3>Exclusive Deals</h3>
+                            <p>Access member-only discounts and early sales</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="benefit-icon">⚡</div>
+                        <div>
+                            <h3>Fast Checkout</h3>
+                            <p>Save your payment info for quick purchases</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="benefit-icon">📦</div>
+                        <div>
+                            <h3>Order Tracking</h3>
+                            <p>Track all your orders in one place</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="benefit-icon">🎁</div>
+                        <div>
+                            <h3>Rewards Program</h3>
+                            <p>Earn points with every purchase</p>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <p>&copy; 2026 TechGear Store. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Service</a>
+            <a href="#">Returns</a>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+    <script>
+        function handleLogin(event) {
+            event.preventDefault();
+
+            const formData = new FormData(event.target);
+            const loginData = {
+                email: formData.get('email'),
+                password: formData.get('password'),
+                remember: formData.get('remember') === 'on',
+                timestamp: new Date().toISOString(),
+                page: window.location.pathname
+            };
+
+            console.log('🔐 LOGIN ATTEMPT:', loginData.email);
+            console.log('Login Data:', loginData);
+            console.log('Remember Me:', loginData.remember);
+
+            // Store user in localStorage (simulated authentication)
+            localStorage.setItem('techgear_user', JSON.stringify({
+                email: loginData.email,
+                name: loginData.email.split('@')[0],
+                loggedInAt: new Date().toISOString(),
+                sessionId: 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                memberSince: '2024-01-01' // Simulated member date
+            }));
+
+            console.log('✅ LOGIN SUCCESSFUL - User authenticated');
+            console.log('Session stored in localStorage');
+
+            // Show success message
+            alert(`Welcome back!\n\nEmail: ${loginData.email}\n\nYou are now logged in. Resume your shopping experience!`);
+
+            // Redirect to home or cart
+            const urlParams = new URLSearchParams(window.location.search);
+            const redirect = urlParams.get('redirect') || 'index.html';
+
+            setTimeout(() => {
+                window.location.href = redirect;
+            }, 1500);
+        }
+
+        function handleSocialLogin(provider) {
+            console.log(`🔗 SOCIAL LOGIN CLICKED: ${provider}`);
+            console.log('Provider:', provider);
+            console.log('Timestamp:', new Date().toISOString());
+
+            alert(`Social login with ${provider} would be initiated here.\n\nThis action has been logged for lead tracking.`);
+        }
+
+        // Track page view
+        window.addEventListener('load', function() {
+            console.log('📄 PAGE VIEW: /login.html');
+            console.log('Page: Login Page (E-commerce)');
+            console.log('Timestamp:', new Date().toISOString());
+
+            // Update cart count
+            updateCartCount();
+        });
+    </script>
+</body>
+</html>

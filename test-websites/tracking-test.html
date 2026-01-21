@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tracking Test Page</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }
+        .status { padding: 20px; margin: 10px 0; border-radius: 8px; }
+        .success { background: #d4edda; border: 1px solid #28a745; }
+        .error { background: #f8d7da; border: 1px solid #dc3545; }
+        .info { background: #d1ecf1; border: 1px solid #17a2b8; }
+        button { padding: 15px 30px; font-size: 16px; cursor: pointer; margin: 10px; }
+        #log { background: #f5f5f5; padding: 20px; border-radius: 8px; font-family: monospace; white-space: pre-wrap; max-height: 400px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Tracking Script Test</h1>
+    
+    <div class="status info">
+        <strong>Website ID:</strong> b780c4ba-91aa-4a6e-82f8-dae91f3a6065<br>
+        <strong>API URL:</strong> http://localhost:3001/api/v1
+    </div>
+
+    <h2>Manual Tests</h2>
+    <button onclick="testScriptLoad()">1. Test Script Load</button>
+    <button onclick="testDirectAPI()">2. Test Direct API Call</button>
+    <button onclick="testTrackPageView()">3. Test Track Page View</button>
+
+    <h2>Console Log:</h2>
+    <div id="log"></div>
+
+    <script>
+        function log(msg, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const time = new Date().toLocaleTimeString();
+            logDiv.innerHTML += `[${time}] ${type.toUpperCase()}: ${msg}\n`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[${type}]`, msg);
+        }
+
+        function testScriptLoad() {
+            log('Testing if tracking script loaded...');
+            if (window.LeadScorer) {
+                log('✅ LeadScorer is available!', 'success');
+                log('Visitor ID: ' + window.LeadScorer.getVisitorId(), 'success');
+                log('Session ID: ' + window.LeadScorer.getSessionId(), 'success');
+                log('Is Ready: ' + window.LeadScorer.isReady(), 'success');
+            } else {
+                log('❌ LeadScorer NOT found - script did not load!', 'error');
+            }
+        }
+
+        async function testDirectAPI() {
+            log('Testing direct API call...');
+            try {
+                const response = await fetch('http://localhost:3001/api/v1/track', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': 'lsk_f4ba38b57529530bda94d71945a864cff89dee9d8b10a2cf826867ad9491af01',
+                        'X-Website-ID': 'b780c4ba-91aa-4a6e-82f8-dae91f3a6065'
+                    },
+                    body: JSON.stringify({
+                        event_type: 'page_view',
+                        visitor_id: 'test_' + Date.now(),
+                        session_id: 'sess_test',
+                        data: {
+                            page_url: '/tracking-test',
+                            page_title: 'Tracking Test'
+                        }
+                    })
+                });
+                
+                const result = await response.json();
+                log('Response status: ' + response.status, response.ok ? 'success' : 'error');
+                log('Response: ' + JSON.stringify(result, null, 2), response.ok ? 'success' : 'error');
+            } catch (error) {
+                log('❌ API call failed: ' + error.message, 'error');
+            }
+        }
+
+        async function testTrackPageView() {
+            log('Testing LeadScorer.track()...');
+            if (!window.LeadScorer) {
+                log('❌ LeadScorer not available', 'error');
+                return;
+            }
+            
+            try {
+                const result = await window.LeadScorer.track('test_event', {
+                    test: true,
+                    timestamp: new Date().toISOString()
+                });
+                log('Track result: ' + JSON.stringify(result, null, 2), result ? 'success' : 'error');
+            } catch (error) {
+                log('❌ Track failed: ' + error.message, 'error');
+            }
+        }
+
+        // Auto-run tests after page load
+        window.onload = function() {
+            log('Page loaded, running tests...');
+            setTimeout(testScriptLoad, 500);
+        };
+    </script>
+
+    <!-- LEAD SCORING TRACKING SCRIPT - mantify -->
+    <script
+      src="http://localhost:3001/tracking-plugin/lead-scorer.js"
+      data-website-id="b780c4ba-91aa-4a6e-82f8-dae91f3a6065"
+      data-api-key="lsk_f4ba38b57529530bda94d71945a864cff89dee9d8b10a2cf826867ad9491af01"
+      data-api-url="http://localhost:3001/api/v1"
+      data-debug="true">
+    </script>
+</body>
+</html>

@@ -83,7 +83,7 @@ const AdminDashboard = ({ apiKey }) => {
             })
             const data = await response.json()
             if (data.success) {
-                setDiscoveredPages(data.discoveredPages || [])
+                setDiscoveredPages(data.discovered_pages || [])
             }
         } catch (error) {
             console.error('Error fetching discovered pages:', error)
@@ -545,29 +545,37 @@ const AdminDashboard = ({ apiKey }) => {
 
                                 {activeSection === 'script' && (
                                     <div className="space-y-4">
-                                        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
                                             <div className="flex items-start gap-2">
-                                                <AlertCircle className="h-5 w-5 text-yellow-600 mt-0.5" />
+                                                <Check className="h-5 w-5 text-green-600 mt-0.5" />
                                                 <div>
-                                                    <h4 className="font-medium text-yellow-800">Installation Required</h4>
-                                                    <p className="text-sm text-yellow-700">Add this script to your website to enable lead tracking and scoring.</p>
+                                                    <h4 className="font-medium text-green-800">Production-Ready Tracking Script</h4>
+                                                    <p className="text-sm text-green-700">Single line installation - works on any website, React, WordPress, or CMS.</p>
                                                 </div>
                                             </div>
                                         </div>
                                         <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
-                                            <pre className="text-sm text-gray-100">
-                                                {`<script>
-  window.LEAD_SCORER_CONFIG = {
-    websiteId: "${selectedWebsite.website_id}",
-    apiKey: "${apiKey}",
-    apiUrl: "http://localhost:3001/api/v1"
-  };
-</script>
-<script src="https://cdn.yourcrm.com/lead-scorer.js"></script>`}
+                                            <pre className="text-sm text-gray-100 whitespace-pre-wrap">
+{`<script
+  src="http://localhost:3001/tracking-plugin/lead-scorer.js"
+  data-website-id="${selectedWebsite.website_id}"
+  data-api-key="${apiKey}"
+  data-api-url="http://localhost:3001/api/v1"
+  data-debug="false">
+</script>`}
                                             </pre>
                                         </div>
+                                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                            <h4 className="font-medium text-blue-800 mb-2">What this script tracks:</h4>
+                                            <ul className="text-sm text-blue-700 space-y-1">
+                                                <li>• <strong>Page Views</strong> - Automatically tracked with configured scoring</li>
+                                                <li>• <strong>Form Submissions</strong> - Creates leads when users submit forms</li>
+                                                <li>• <strong>CTA Clicks</strong> - Add <code className="bg-blue-100 px-1 rounded">data-ls-track="button-name"</code> to any element</li>
+                                                <li>• <strong>SPA Navigation</strong> - Works with React Router, Vue Router, etc.</li>
+                                            </ul>
+                                        </div>
                                         <p className="text-sm text-gray-500">
-                                            Tracking Code: <code className="bg-gray-100 px-2 py-1 rounded">{selectedWebsite.tracking_code}</code>
+                                            Website ID: <code className="bg-gray-100 px-2 py-1 rounded">{selectedWebsite.website_id}</code>
                                         </p>
                                     </div>
                                 )}

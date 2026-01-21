@@ -118,11 +118,14 @@ export async function calculateLeadScoreMultiTenant(tenantId, leadId) {
 
     // ===== BEHAVIORAL SCORING (Tenant-Specific Pages & CTAs) =====
     // Step 53-56: Query lead_activities for this tenant and lead
+    // Also query by contact_id in case lead_id isn't set on some activities
+    const contactId = lead.contact?.contact_id || lead.contact_id;
+    
     const { data: activities } = await supabase
       .from('lead_activities')
       .select('*')
       .eq('tenant_id', tenantId)
-      .eq('lead_id', leadId)
+      .or(`lead_id.eq.${leadId},contact_id.eq.${contactId}`)
       .order('activity_timestamp', { ascending: false });
 
     // Step 54-55: Get points from tenant_pages and tenant_ctas with caching
@@ -180,15 +183,21 @@ export async function calculateLeadScoreMultiTenant(tenantId, leadId) {
     behavioralScore = Math.min(behavioralScore, 100);
 
     // ===== NEGATIVE SCORING (System Rules) =====
+    // Reduced negative impact - only apply 25% of penalties for better lead experience
+    const NEGATIVE_PENALTY_MULTIPLIER = 0.25;
+    
     for (const rule of systemRules.negative) {
       const fieldValue = extractFieldValue(lead, rule.condition_field);
 
       if (evaluateCondition(fieldValue, rule.condition_operator, rule.condition_value)) {
-        negativeScore += rule.points; // Already negative in DB
+        // Apply reduced penalty
+        const adjustedPoints = Math.round(rule.points * NEGATIVE_PENALTY_MULTIPLIER);
+        negativeScore += adjustedPoints;
         matchedRules.push({
           type: 'negative',
           rule: rule.rule_name,
-          points: rule.points
+          points: adjustedPoints,
+          originalPoints: rule.points
         });
       }
     }

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Test - Lead Scoring</title>
+
+    <!-- TRACKING SCRIPT -->
+    <script>
+        window.LEAD_SCORER_CONFIG = {
+            websiteId: "e64d878d-d04f-438f-965f-6beba2d225a7",
+            apiKey: "lsk_5d9ff8f05646dcd6800d0e61d38846f77c374a4a201654cfefc44e65bdbb7db7",
+            apiUrl: "http://localhost:3001/api/v1",
+            debug: true
+        };
+    </script>
+    <script src="http://localhost:3001/tracking-plugin/lead-scorer.js"></script>
+</head>
+<body>
+    <h1>Debug Test Page</h1>
+
+    <form id="testForm">
+        <input type="email" name="email" value="test@example.com" required>
+        <input type="text" name="name" value="Test User">
+        <input type="text" name="company" value="Test Company">
+        <button type="submit">Submit Test</button>
+    </form>
+
+    <div id="results" style="margin-top: 20px; padding: 10px; background: #f0f0f0;"></div>
+
+    <script>
+        // Wait for page to load
+        window.addEventListener('load', function() {
+            console.log('=== DEBUG TEST STARTED ===');
+            console.log('LeadScorer exists:', typeof window.LeadScorer !== 'undefined');
+            console.log('Config:', window.LEAD_SCORER_CONFIG);
+
+            if (window.LeadScorer) {
+                console.log('LeadScorer state:', window.LeadScorer.state);
+            }
+
+            // Test form submission
+            const form = document.getElementById('testForm');
+            form.addEventListener('submit', async function(e) {
+                e.preventDefault();
+
+                console.log('=== FORM SUBMITTED ===');
+
+                const formData = new FormData(form);
+                const data = {
+                    email: formData.get('email'),
+                    name: formData.get('name'),
+                    company: formData.get('company')
+                };
+
+                console.log('Form data:', data);
+
+                // Test direct API call
+                try {
+                    const config = window.LEAD_SCORER_CONFIG;
+                    const response = await fetch(`${config.apiUrl}/track`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-API-Key': config.apiKey,
+                            'X-Website-Id': config.websiteId
+                        },
+                        body: JSON.stringify({
+                            event_type: 'form_submission',
+                            visitor_id: window.LeadScorer ? window.LeadScorer.state.visitorId : 'test_visitor_' + Date.now(),
+                            data: {
+                                ...data,
+                                page_url: '/debug_test'
+                            }
+                        })
+                    });
+
+                    const result = await response.json();
+                    console.log('✅ API Response:', result);
+
+                    document.getElementById('results').innerHTML = `
+                        <h3>SUCCESS!</h3>
+                        <pre>${JSON.stringify(result, null, 2)}</pre>
+                        <p>Check your CRM dashboard to see if the lead appears!</p>
+                    `;
+                } catch (error) {
+                    console.error('❌ Error:', error);
+                    document.getElementById('results').innerHTML = `
+                        <h3>ERROR!</h3>
+                        <pre>${error.message}</pre>
+                    `;
+                }
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - CloudFlow SaaS</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- LEAD SCORING TRACKING SCRIPT -->
+    <script
+      src="http://localhost:3001/tracking-plugin/lead-scorer.js"
+      data-website-id="19db0175-0223-4795-80f8-163e07365aa4"
+      data-api-key="lsk_d95033840f4cc8b3f1d055e5c9ee1070b8f5fc9e3549b42dfd8d1e239f8d3e24"
+      data-api-url="http://localhost:3001/api/v1"
+      data-debug="true">
+    </script>
+
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">☁️ CloudFlow</div>
+            <ul class="nav-menu">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="features.html">Features</a></li>
+                <li><a href="pricing.html">Pricing</a></li>
+                <li><a href="contact.html">Contact</a></li>
+            </ul>
+            <div class="nav-buttons" id="navButtons">
+                <a href="signup.html" class="btn-signup">Sign Up Free</a>
+            </div>
+        </div>
+    </nav>
+
+    <section class="auth-section">
+        <div class="auth-container">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <h1>Welcome Back</h1>
+                    <p>Login to your CloudFlow account</p>
+                </div>
+
+                <form id="loginForm" class="auth-form" onsubmit="handleLogin(event)">
+                    <div class="form-group">
+                        <label for="email">Email Address</label>
+                        <input
+                            type="email"
+                            id="email"
+                            name="email"
+                            required
+                            placeholder="you@company.com"
+                            autocomplete="email"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input
+                            type="password"
+                            id="password"
+                            name="password"
+                            required
+                            placeholder="Enter your password"
+                            autocomplete="current-password"
+                            minlength="8"
+                        >
+                    </div>
+
+                    <div class="form-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="remember" id="remember">
+                            <span>Remember me</span>
+                        </label>
+                        <a href="#" class="link-text">Forgot password?</a>
+                    </div>
+
+                    <button type="submit" class="btn-primary btn-full">Login</button>
+
+                    <div class="form-divider">
+                        <span>or continue with</span>
+                    </div>
+
+                    <div class="social-login">
+                        <button type="button" class="btn-social" onclick="handleSocialLogin('google')">
+                            <span>🔍</span> Google
+                        </button>
+                        <button type="button" class="btn-social" onclick="handleSocialLogin('microsoft')">
+                            <span>🪟</span> Microsoft
+                        </button>
+                    </div>
+
+                    <div class="auth-footer">
+                        <p>Don't have an account? <a href="signup.html" class="link-primary">Sign up free</a></p>
+                    </div>
+                </form>
+            </div>
+
+            <div class="auth-benefits">
+                <h2>Why CloudFlow?</h2>
+                <ul class="benefits-list">
+                    <li>
+                        <div class="benefit-icon">✨</div>
+                        <div>
+                            <h3>Boost Productivity</h3>
+                            <p>Streamline your workflow and save 10+ hours per week</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="benefit-icon">🔒</div>
+                        <div>
+                            <h3>Enterprise Security</h3>
+                            <p>Bank-level encryption and SOC 2 compliance</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="benefit-icon">🚀</div>
+                        <div>
+                            <h3>Scale with Confidence</h3>
+                            <p>From startup to enterprise, we grow with you</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="benefit-icon">💎</div>
+                        <div>
+                            <h3>Premium Support</h3>
+                            <p>24/7 customer support from real humans</p>
+                        </div>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <p>&copy; 2026 CloudFlow SaaS. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Service</a>
+            <a href="#">Security</a>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+    <script>
+        async function handleLogin(event) {
+            event.preventDefault();
+
+            const formData = new FormData(event.target);
+            const loginData = {
+                email: formData.get('email'),
+                password: formData.get('password'),
+                remember: formData.get('remember') === 'on',
+                timestamp: new Date().toISOString(),
+                page: window.location.pathname
+            };
+
+            console.log('🔐 LOGIN ATTEMPT:', loginData.email);
+            console.log('Login Data:', loginData);
+            console.log('Remember Me:', loginData.remember);
+
+            // Track login to API for lead scoring
+            try {
+                const config = window.LEAD_SCORER_CONFIG;
+                if (config) {
+                    const response = await fetch(`${config.apiUrl}/track`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-API-Key': config.apiKey,
+                            'X-Website-Id': config.websiteId
+                        },
+                        body: JSON.stringify({
+                            event_type: 'form_submission',
+                            visitor_id: getVisitorId(),
+                            data: {
+                                email: loginData.email,
+                                name: loginData.email.split('@')[0],
+                                page_url: '/login'
+                            }
+                        })
+                    });
+                    const result = await response.json();
+                    console.log('✅ Login tracked to API:', result);
+                }
+            } catch (error) {
+                console.error('Error tracking login:', error);
+            }
+
+            // Store user in localStorage (simulated authentication)
+            localStorage.setItem('cloudflow_user', JSON.stringify({
+                email: loginData.email,
+                name: loginData.email.split('@')[0],
+                loggedInAt: new Date().toISOString(),
+                sessionId: 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+            }));
+
+            console.log('✅ LOGIN SUCCESSFUL - User stored in localStorage');
+            console.log('Redirecting to dashboard...');
+
+            // Show success message
+            alert(`Welcome back!\n\nEmail: ${loginData.email}\n\nYou are now logged in. This login has been tracked for lead scoring.`);
+
+            // Redirect to home page (in production, would go to dashboard)
+            setTimeout(() => {
+                window.location.href = 'index.html';
+            }, 1500);
+        }
+
+        function handleSocialLogin(provider) {
+            console.log(`🔗 SOCIAL LOGIN CLICKED: ${provider}`);
+            console.log('Provider:', provider);
+            console.log('Timestamp:', new Date().toISOString());
+
+            alert(`Social login with ${provider} would be initiated here.\n\nThis action has been logged to console.`);
+        }
+
+        // Track page view
+        window.addEventListener('load', function() {
+            console.log('📄 PAGE VIEW: /login.html');
+            console.log('Page: Login Page');
+            console.log('Timestamp:', new Date().toISOString());
+        });
+    </script>
+</body>
+</html>

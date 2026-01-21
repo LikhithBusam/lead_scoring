@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Production Tracking Script Test</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        h1 { color: #1a1a1a; margin-bottom: 8px; }
+        h2 { color: #333; margin-bottom: 16px; font-size: 18px; }
+        p { color: #666; line-height: 1.6; margin-bottom: 16px; }
+        .status { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .status.info { background: #cce5ff; color: #004085; }
+        code { background: #f1f1f1; padding: 2px 6px; border-radius: 4px; font-size: 14px; }
+        pre { background: #1a1a1a; color: #fff; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; margin-bottom: 16px; }
+        .btn { display: inline-block; padding: 12px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; margin-right: 8px; margin-bottom: 8px; }
+        .btn-primary { background: #2563eb; color: white; }
+        .btn-secondary { background: #6b7280; color: white; }
+        .btn-success { background: #10b981; color: white; }
+        .btn:hover { opacity: 0.9; }
+        input, select { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; font-size: 14px; }
+        label { display: block; margin-bottom: 4px; font-weight: 500; color: #333; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+        .nav { display: flex; gap: 8px; margin-bottom: 20px; }
+        .nav a { padding: 8px 16px; background: #e5e7eb; color: #374151; text-decoration: none; border-radius: 6px; }
+        .nav a:hover, .nav a.active { background: #2563eb; color: white; }
+        #log { background: #1a1a1a; color: #10b981; padding: 16px; border-radius: 8px; font-family: monospace; font-size: 12px; height: 200px; overflow-y: auto; }
+        #log .error { color: #ef4444; }
+        #log .warn { color: #f59e0b; }
+        #log .info { color: #3b82f6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <h1>Production Tracking Script Test</h1>
+            <p>Testing the new CDN-style tracking script with data attributes configuration.</p>
+
+            <div id="status" class="status info">
+                Checking script initialization...
+            </div>
+
+            <h2>Script Installation (Production Format)</h2>
+            <pre>&lt;script
+  src="http://localhost:3001/tracking-plugin/lead-scorer.js"
+  data-website-id="19db0175-0223-4795-80f8-163e07365aa4"
+  data-api-key="lsk_d95033840f4cc8b3f1d055e5c9ee1070b8f5fc9e3549b42dfd8d1e239f8d3e24"
+  data-api-url="http://localhost:3001/api/v1"
+  data-debug="true"&gt;
+&lt;/script&gt;</pre>
+        </div>
+
+        <div class="card">
+            <h2>Navigation Test (SPA Tracking)</h2>
+            <p>Click these links to test page view tracking:</p>
+            <div class="nav">
+                <a href="#home" class="active">Home</a>
+                <a href="#features">Features</a>
+                <a href="#pricing">Pricing</a>
+                <a href="#contact">Contact</a>
+            </div>
+            <p id="current-page">Current page: #home</p>
+        </div>
+
+        <div class="card">
+            <h2>CTA Click Tracking</h2>
+            <p>These buttons have <code>data-ls-track</code> attribute for click tracking:</p>
+            <div class="grid">
+                <button class="btn btn-primary" data-ls-track="get-started" data-ls-value="hero">
+                    Get Started
+                </button>
+                <button class="btn btn-secondary" data-ls-track="learn-more" data-ls-value="features">
+                    Learn More
+                </button>
+                <button class="btn btn-success" data-ls-track="request-demo" data-ls-value="pricing">
+                    Request Demo
+                </button>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Form Submission Test</h2>
+            <p>Submit this form to test lead creation:</p>
+            <form id="leadForm">
+                <label>Email *</label>
+                <input type="email" name="email" placeholder="your@email.com" required>
+
+                <label>Full Name</label>
+                <input type="text" name="name" placeholder="John Doe">
+
+                <label>Company</label>
+                <input type="text" name="company" placeholder="Acme Inc">
+
+                <label>Phone</label>
+                <input type="tel" name="phone" placeholder="+1-555-0000">
+
+                <button type="submit" class="btn btn-primary">Submit Lead Form</button>
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Manual Tracking API</h2>
+            <p>Test the public API methods:</p>
+            <button class="btn btn-secondary" onclick="testTrack()">
+                LeadScorer.track('custom_event', {...})
+            </button>
+            <button class="btn btn-secondary" onclick="testIdentify()">
+                LeadScorer.identify({email: '...'})
+            </button>
+            <button class="btn btn-secondary" onclick="showIds()">
+                Show Visitor/Session IDs
+            </button>
+        </div>
+
+        <div class="card">
+            <h2>Console Log</h2>
+            <div id="log"></div>
+            <button class="btn btn-secondary" onclick="clearLog()" style="margin-top: 12px;">Clear Log</button>
+        </div>
+    </div>
+
+    <!-- PRODUCTION-READY TRACKING SCRIPT -->
+    <script
+        src="http://localhost:3001/tracking-plugin/lead-scorer.js"
+        data-website-id="19db0175-0223-4795-80f8-163e07365aa4"
+        data-api-key="lsk_d95033840f4cc8b3f1d055e5c9ee1070b8f5fc9e3549b42dfd8d1e239f8d3e24"
+        data-api-url="http://localhost:3001/api/v1"
+        data-debug="true">
+    </script>
+
+    <script>
+        // Custom log capture
+        const logDiv = document.getElementById('log');
+        const originalLog = console.log;
+        const originalError = console.error;
+        const originalWarn = console.warn;
+
+        function addLog(message, type = 'info') {
+            const time = new Date().toLocaleTimeString();
+            const line = document.createElement('div');
+            line.className = type;
+            line.textContent = `[${time}] ${message}`;
+            logDiv.appendChild(line);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            if (args[0]?.includes?.('[LeadScorer]') || args[0] === '[LeadScorer]') {
+                addLog(args.join(' '), 'info');
+            }
+        };
+
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            if (args[0]?.includes?.('[LeadScorer]') || args[0] === '[LeadScorer]') {
+                addLog(args.join(' '), 'error');
+            }
+        };
+
+        console.warn = function(...args) {
+            originalWarn.apply(console, args);
+            if (args[0]?.includes?.('[LeadScorer]') || args[0] === '[LeadScorer]') {
+                addLog(args.join(' '), 'warn');
+            }
+        };
+
+        function clearLog() {
+            logDiv.innerHTML = '';
+        }
+
+        // Check initialization status
+        setTimeout(() => {
+            const status = document.getElementById('status');
+            if (window.LeadScorer && window.LeadScorer.isReady()) {
+                status.className = 'status success';
+                status.innerHTML = '✅ <strong>Script initialized successfully!</strong><br>' +
+                    'Visitor ID: ' + window.LeadScorer.getVisitorId() + '<br>' +
+                    'Session ID: ' + window.LeadScorer.getSessionId();
+                addLog('Script initialized successfully', 'info');
+            } else if (window.LeadScorer) {
+                status.className = 'status info';
+                status.textContent = '⏳ Script loaded but not yet ready...';
+            } else {
+                status.className = 'status error';
+                status.textContent = '❌ Script failed to load. Check console for errors.';
+                addLog('Script failed to initialize', 'error');
+            }
+        }, 1000);
+
+        // Navigation tracking
+        document.querySelectorAll('.nav a').forEach(link => {
+            link.addEventListener('click', function(e) {
+                document.querySelectorAll('.nav a').forEach(l => l.classList.remove('active'));
+                this.classList.add('active');
+                document.getElementById('current-page').textContent = 'Current page: ' + this.getAttribute('href');
+            });
+        });
+
+        // Form submission
+        document.getElementById('leadForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            addLog('Form submitted - check network tab for tracking request', 'info');
+            // Form tracking is automatic, but we prevent page reload for demo
+            setTimeout(() => {
+                alert('Form submitted! Check the log for tracking confirmation.');
+            }, 500);
+        });
+
+        // Manual API tests
+        function testTrack() {
+            if (window.LeadScorer) {
+                window.LeadScorer.track('button_click', {
+                    button: 'test_button',
+                    page: window.location.pathname,
+                    custom_data: 'test value'
+                });
+                addLog('Custom event tracked via LeadScorer.track()', 'info');
+            } else {
+                addLog('LeadScorer not available', 'error');
+            }
+        }
+
+        function testIdentify() {
+            if (window.LeadScorer) {
+                window.LeadScorer.identify({
+                    email: 'test@example.com',
+                    name: 'Test User',
+                    company: 'Test Company'
+                });
+                addLog('User identified via LeadScorer.identify()', 'info');
+            } else {
+                addLog('LeadScorer not available', 'error');
+            }
+        }
+
+        function showIds() {
+            if (window.LeadScorer) {
+                addLog('Visitor ID: ' + window.LeadScorer.getVisitorId(), 'info');
+                addLog('Session ID: ' + window.LeadScorer.getSessionId(), 'info');
+            } else {
+                addLog('LeadScorer not available', 'error');
+            }
+        }
+    </script>
+</body>
+</html>

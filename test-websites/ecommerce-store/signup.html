@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - TechGear Store</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- LEAD SCORING TRACKING SCRIPT - mantify -->
+    <script
+      src="http://localhost:3001/tracking-plugin/lead-scorer.js"
+      data-website-id="b780c4ba-91aa-4a6e-82f8-dae91f3a6065"
+      data-api-key="lsk_f4ba38b57529530bda94d71945a864cff89dee9d8b10a2cf826867ad9491af01"
+      data-api-url="http://localhost:3001/api/v1"
+      data-debug="true">
+    </script>
+
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">⚡ TechGear</div>
+            <ul class="nav-menu">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="products.html">Products</a></li>
+                <li><a href="cart.html">Cart <span id="cart-count" class="cart-badge">0</span></a></li>
+            </ul>
+            <div class="nav-actions" id="navButtons">
+                <a href="login.html" class="btn-login">Login</a>
+            </div>
+        </div>
+    </nav>
+
+    <section class="auth-section">
+        <div class="auth-container">
+            <div class="auth-card">
+                <div class="auth-header">
+                    <h1>Join TechGear</h1>
+                    <p>Create your account and start shopping</p>
+                </div>
+
+                <form id="signupForm" class="auth-form" onsubmit="handleSignup(event)">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="firstName">First Name</label>
+                            <input
+                                type="text"
+                                id="firstName"
+                                name="firstName"
+                                required
+                                placeholder="John"
+                                autocomplete="given-name"
+                            >
+                        </div>
+                        <div class="form-group">
+                            <label for="lastName">Last Name</label>
+                            <input
+                                type="text"
+                                id="lastName"
+                                name="lastName"
+                                required
+                                placeholder="Doe"
+                                autocomplete="family-name"
+                            >
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="email">Email Address</label>
+                        <input
+                            type="email"
+                            id="email"
+                            name="email"
+                            required
+                            placeholder="you@example.com"
+                            autocomplete="email"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="phone">Phone Number (Optional)</label>
+                        <input
+                            type="tel"
+                            id="phone"
+                            name="phone"
+                            placeholder="+1 (555) 000-0000"
+                            autocomplete="tel"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="password">Password</label>
+                        <input
+                            type="password"
+                            id="password"
+                            name="password"
+                            required
+                            placeholder="At least 6 characters"
+                            autocomplete="new-password"
+                            minlength="6"
+                        >
+                        <small class="form-hint">Must be at least 6 characters</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirmPassword">Confirm Password</label>
+                        <input
+                            type="password"
+                            id="confirmPassword"
+                            name="confirmPassword"
+                            required
+                            placeholder="Re-enter your password"
+                            autocomplete="new-password"
+                            minlength="6"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="newsletter" id="newsletter">
+                            <span>Send me exclusive offers and updates</span>
+                        </label>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="terms" id="terms" required>
+                            <span>I agree to the <a href="#" class="link-text">Terms & Conditions</a> and <a href="#" class="link-text">Privacy Policy</a></span>
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn-primary btn-full">Create My Account</button>
+
+                    <div class="form-divider">
+                        <span>or sign up with</span>
+                    </div>
+
+                    <div class="social-login">
+                        <button type="button" class="btn-social" onclick="handleSocialSignup('google')">
+                            <span>🔍</span> Google
+                        </button>
+                        <button type="button" class="btn-social" onclick="handleSocialSignup('facebook')">
+                            <span>📘</span> Facebook
+                        </button>
+                    </div>
+
+                    <div class="auth-footer">
+                        <p>Already have an account? <a href="login.html" class="link-primary">Login here</a></p>
+                    </div>
+                </form>
+            </div>
+
+            <div class="auth-benefits">
+                <h2>Why Join TechGear?</h2>
+                <ul class="benefits-list">
+                    <li>
+                        <div class="benefit-icon">🎁</div>
+                        <div>
+                            <h3>Welcome Bonus</h3>
+                            <p>Get 10% off your first order when you sign up</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="benefit-icon">🚚</div>
+                        <div>
+                            <h3>Free Shipping</h3>
+                            <p>On orders over $50 for members</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="benefit-icon">⭐</div>
+                        <div>
+                            <h3>Earn Rewards</h3>
+                            <p>1 point for every $1 spent</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="benefit-icon">📱</div>
+                        <div>
+                            <h3>Order Tracking</h3>
+                            <p>Real-time updates on your purchases</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="benefit-icon">💎</div>
+                        <div>
+                            <h3>VIP Access</h3>
+                            <p>Early access to sales and new products</p>
+                        </div>
+                    </li>
+                    <li>
+                        <div class="benefit-icon">🔒</div>
+                        <div>
+                            <h3>Secure Shopping</h3>
+                            <p>SSL encryption and secure payment processing</p>
+                        </div>
+                    </li>
+                </ul>
+
+                <div class="trust-badges">
+                    <p class="trust-text">Trusted by 500,000+ customers</p>
+                    <div class="badges">
+                        <span class="badge">⭐ 4.8/5 Rating</span>
+                        <span class="badge">🔒 SSL Secure</span>
+                        <span class="badge">✅ Verified Store</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <p>&copy; 2026 TechGear Store. All rights reserved.</p>
+        <div class="footer-links">
+            <a href="#">Privacy Policy</a>
+            <a href="#">Terms of Service</a>
+            <a href="#">Returns</a>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+    <script>
+        function handleSignup(event) {
+            event.preventDefault();
+
+            const formData = new FormData(event.target);
+
+            // Validate passwords match
+            const password = formData.get('password');
+            const confirmPassword = formData.get('confirmPassword');
+
+            if (password !== confirmPassword) {
+                alert('Passwords do not match. Please try again.');
+                return;
+            }
+
+            const signupData = {
+                firstName: formData.get('firstName'),
+                lastName: formData.get('lastName'),
+                email: formData.get('email'),
+                phone: formData.get('phone'),
+                newsletter: formData.get('newsletter') === 'on',
+                termsAccepted: formData.get('terms') === 'on',
+                timestamp: new Date().toISOString(),
+                page: window.location.pathname
+            };
+
+            console.log('📝 SIGNUP FORM SUBMITTED (E-commerce)');
+            console.log('Signup Data:', {
+                ...signupData,
+                password: '[HIDDEN]' // Never log passwords
+            });
+            console.log('Full Name:', `${signupData.firstName} ${signupData.lastName}`);
+            console.log('Email:', signupData.email);
+            console.log('Newsletter Subscription:', signupData.newsletter);
+
+            // Store user in localStorage (simulated authentication)
+            localStorage.setItem('techgear_user', JSON.stringify({
+                email: signupData.email,
+                name: `${signupData.firstName} ${signupData.lastName}`,
+                firstName: signupData.firstName,
+                phone: signupData.phone,
+                newsletter: signupData.newsletter,
+                signedUpAt: new Date().toISOString(),
+                sessionId: 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                isNewUser: true,
+                rewardsPoints: 0,
+                memberTier: 'Silver'
+            }));
+
+            console.log('✅ SIGNUP SUCCESSFUL - New customer created');
+            console.log('User authenticated and session created');
+
+            // Show success message with welcome bonus
+            alert(`Welcome to TechGear, ${signupData.firstName}!\n\nEmail: ${signupData.email}\n\n🎁 Your 10% welcome discount has been applied!\n\nThis signup has been tracked as a high-value conversion.`);
+
+            // Redirect to home with welcome param
+            setTimeout(() => {
+                window.location.href = 'index.html?welcome=true&discount=10';
+            }, 1500);
+        }
+
+        function handleSocialSignup(provider) {
+            console.log(`🔗 SOCIAL SIGNUP CLICKED: ${provider}`);
+            console.log('Provider:', provider);
+            console.log('Timestamp:', new Date().toISOString());
+
+            alert(`Social signup with ${provider} would be initiated here.\n\nQuick registration for instant shopping!`);
+        }
+
+        // Track page view
+        window.addEventListener('load', function() {
+            console.log('📄 PAGE VIEW: /signup.html (E-commerce)');
+            console.log('Page: Signup Page - High Intent');
+            console.log('Timestamp:', new Date().toISOString());
+            console.log('Note: Viewing signup indicates purchase intent');
+
+            // Update cart count
+            updateCartCount();
+        });
+
+        // Real-time password validation
+        document.getElementById('confirmPassword')?.addEventListener('input', function(e) {
+            const password = document.getElementById('password').value;
+            const confirmPassword = e.target.value;
+
+            if (confirmPassword && password !== confirmPassword) {
+                e.target.setCustomValidity('Passwords do not match');
+            } else {
+                e.target.setCustomValidity('');
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Shopping Cart - TechGear Store</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- LEAD SCORING TRACKING SCRIPT - mantify -->
+    <script
+      src="http://localhost:3001/tracking-plugin/lead-scorer.js"
+      data-website-id="b780c4ba-91aa-4a6e-82f8-dae91f3a6065"
+      data-api-key="lsk_f4ba38b57529530bda94d71945a864cff89dee9d8b10a2cf826867ad9491af01"
+      data-api-url="http://localhost:3001/api/v1"
+      data-debug="true">
+    </script>
+
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">⚡ TechGear</div>
+            <ul class="nav-menu">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="products.html">Products</a></li>
+                <li><a href="cart.html" class="active">Cart <span class="cart-count">0</span></a></li>
+            </ul>
+            <div class="nav-actions" id="navButtons">
+                <a href="login.html" class="btn-login">Login</a>
+                <a href="signup.html" class="btn-signup">Sign Up</a>
+                <a href="cart.html" class="cart-icon">🛒 <span class="cart-count">0</span></a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="page-header">
+        <div class="container">
+            <h1>Shopping Cart</h1>
+            <p>Review your items before checkout</p>
+        </div>
+    </div>
+
+    <section class="cart-section">
+        <div class="container">
+            <div class="cart-layout">
+                <div class="cart-items">
+                    <div class="cart-header">
+                        <h2>Cart Items</h2>
+                        <button class="btn-text" onclick="handleClearCart()">Clear Cart</button>
+                    </div>
+
+                    <div id="cartItemsContainer" class="cart-items-list">
+                        <!-- Cart items will be inserted here by JavaScript -->
+                        <div class="empty-cart">
+                            <div class="empty-cart-icon">🛒</div>
+                            <h3>Your cart is empty</h3>
+                            <p>Add some products to get started!</p>
+                            <button class="btn-primary" onclick="window.location.href='products.html'">Browse Products</button>
+                        </div>
+                    </div>
+
+                    <!-- Sample cart item (hidden by default, template for JS) -->
+                    <div class="cart-item" style="display: none;" id="cartItemTemplate">
+                        <div class="item-image">📱</div>
+                        <div class="item-details">
+                            <h3 class="item-name">Product Name</h3>
+                            <p class="item-specs">Specs here</p>
+                            <button class="btn-text" onclick="handleRemoveItem(this)">Remove</button>
+                        </div>
+                        <div class="item-quantity">
+                            <button onclick="decreaseQuantity(this)">-</button>
+                            <input type="number" value="1" min="1" readonly>
+                            <button onclick="increaseQuantity(this)">+</button>
+                        </div>
+                        <div class="item-price">$999</div>
+                    </div>
+                </div>
+
+                <div class="cart-summary">
+                    <h2>Order Summary</h2>
+
+                    <div class="summary-row">
+                        <span>Subtotal:</span>
+                        <span id="subtotal">$0.00</span>
+                    </div>
+
+                    <div class="summary-row">
+                        <span>Shipping:</span>
+                        <span id="shipping">Free</span>
+                    </div>
+
+                    <div class="summary-row">
+                        <span>Tax (10%):</span>
+                        <span id="tax">$0.00</span>
+                    </div>
+
+                    <div class="promo-code">
+                        <input type="text" placeholder="Promo code" id="promoInput">
+                        <button class="btn-secondary" onclick="handlePromoCode()">Apply</button>
+                    </div>
+
+                    <div class="summary-row total">
+                        <span>Total:</span>
+                        <span id="total">$0.00</span>
+                    </div>
+
+                    <button class="btn-primary btn-block" onclick="handleCheckout()">Proceed to Checkout</button>
+
+                    <div class="payment-methods">
+                        <p>We accept:</p>
+                        <div class="payment-icons">
+                            💳 🅿️ 🍎 🔐
+                        </div>
+                    </div>
+
+                    <div class="guarantee">
+                        <p>✅ Secure checkout</p>
+                        <p>🔒 SSL encrypted</p>
+                        <p>🔄 30-day returns</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="recommended-products">
+                <h2>You might also like</h2>
+                <div class="product-scroll">
+                    <div class="product-card-mini" onclick="handleProductClick('Wireless Earbuds')">
+                        <div class="product-image-mini">🎧</div>
+                        <h4>Wireless Earbuds</h4>
+                        <p>$149</p>
+                    </div>
+                    <div class="product-card-mini" onclick="handleProductClick('Phone Case')">
+                        <div class="product-image-mini">📱</div>
+                        <h4>Premium Phone Case</h4>
+                        <p>$29</p>
+                    </div>
+                    <div class="product-card-mini" onclick="handleProductClick('Screen Protector')">
+                        <div class="product-image-mini">🛡️</div>
+                        <h4>Screen Protector</h4>
+                        <p>$19</p>
+                    </div>
+                    <div class="product-card-mini" onclick="handleProductClick('Charger')">
+                        <div class="product-image-mini">🔌</div>
+                        <h4>Fast Charger</h4>
+                        <p>$39</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div>
+                    <h4>About TechGear</h4>
+                    <p>Your trusted source for premium electronics and tech accessories.</p>
+                </div>
+                <div>
+                    <h4>Quick Links</h4>
+                    <ul>
+                        <li><a href="products.html">Products</a></li>
+                        <li><a href="#">About Us</a></li>
+                        <li><a href="#">Contact</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4>Customer Service</h4>
+                    <ul>
+                        <li><a href="#">Shipping Info</a></li>
+                        <li><a href="#">Returns</a></li>
+                        <li><a href="#">Support</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 TechGear Store. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

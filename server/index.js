@@ -58,18 +58,43 @@ async function searchWithSerper(query) {
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: false, // Disable CSP for API server
-  crossOriginEmbedderPolicy: false
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" } // Allow cross-origin resource loading
 }));
 
 // CORS configuration with security (added multi-tenant headers)
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5176'],
+  origin: function(origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, or same-origin)
+    if (!origin) return callback(null, true);
+    
+    // Allow all localhost origins for development
+    if (origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      return callback(null, true);
+    }
+    
+    // Check against allowed origins from env
+    const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // Allow anyway in development mode
+    if (process.env.NODE_ENV !== 'production') {
+      return callback(null, true);
+    }
+    
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Website-Id', 'X-Visitor-Id']
 }));
 
 app.use(express.json({ limit: '10mb' }));
+
+// Serve tracking plugin as static file
+app.use('/tracking-plugin', express.static(path.join(__dirname, '..', 'tracking-plugin')));
 
 // Request logging
 app.use(requestLogger);

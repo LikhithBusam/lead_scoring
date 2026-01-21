@@ -165,6 +165,134 @@ router.post('/tenants/register', async (req, res) => {
 });
 
 /**
+ * POST /api/v1/tenants/register-with-admin - Register tenant with admin user (Traditional Login)
+ * Creates a company AND its first admin user in one step
+ */
+router.post('/tenants/register-with-admin', async (req, res) => {
+  try {
+    // Extended validation schema for this endpoint
+    const registerWithAdminSchema = z.object({
+      company_name: z.string().min(1).max(255),
+      domain: z.string().optional(),
+      plan_type: z.enum(['free', 'basic', 'pro', 'enterprise']).default('free'),
+      admin_email: z.string().email(),
+      admin_password: z.string().min(8),
+      admin_first_name: z.string().min(1).max(100),
+      admin_last_name: z.string().min(1).max(100)
+    });
+
+    const validation = registerWithAdminSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        error: 'Invalid input',
+        details: validation.error.errors
+      });
+    }
+
+    const { company_name, domain, plan_type, admin_email, admin_password, admin_first_name, admin_last_name } = validation.data;
+
+    // Check if admin email already exists
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('user_id')
+      .eq('email', admin_email)
+      .single();
+
+    if (existingUser) {
+      return res.status(409).json({
+        error: 'User already exists with this email',
+        code: 'USER_EXISTS'
+      });
+    }
+
+    // Generate secure API key
+    const apiKey = generateApiKey();
+
+    // Create tenant first
+    const { data: tenant, error: tenantError } = await supabase
+      .from('tenants')
+      .insert({
+        company_name,
+        domain,
+        api_key: apiKey,
+        plan_type,
+        is_active: true,
+        settings: {
+          target_industries: [],
+          deduplication_windows: {
+            page_view: 5,
+            cta_click: 30,
+            download: 1440
+          }
+        }
+      })
+      .select()
+      .single();
+
+    if (tenantError) {
+      throw tenantError;
+    }
+
+    // Hash password
+    const bcrypt = await import('bcryptjs');
+    const hashedPassword = await bcrypt.hash(admin_password, 12);
+
+    // Create admin user linked to this tenant
+    const { data: adminUser, error: userError } = await supabase
+      .from('users')
+      .insert({
+        email: admin_email,
+        password_hash: hashedPassword,
+        first_name: admin_first_name,
+        last_name: admin_last_name,
+        role: 'admin',
+        tenant_id: tenant.tenant_id,
+        is_active: true,
+        created_at: new Date().toISOString()
+      })
+      .select('user_id, email, first_name, last_name, role, tenant_id')
+      .single();
+
+    if (userError) {
+      // Rollback: delete the tenant if user creation fails
+      await supabase.from('tenants').delete().eq('tenant_id', tenant.tenant_id);
+      throw userError;
+    }
+
+    // Generate JWT token for immediate login
+    const { generateToken } = await import('../middleware/auth.js');
+    const token = generateToken(adminUser.user_id, adminUser.email, adminUser.role);
+
+    res.status(201).json({
+      success: true,
+      message: 'Company and admin user created successfully',
+      user: {
+        id: adminUser.user_id,
+        email: adminUser.email,
+        firstName: adminUser.first_name,
+        lastName: adminUser.last_name,
+        role: adminUser.role
+      },
+      tenant: {
+        tenantId: tenant.tenant_id,
+        companyName: tenant.company_name,
+        domain: tenant.domain,
+        planType: tenant.plan_type,
+        apiKey: apiKey // Return API key once for integration purposes
+      },
+      token // JWT for immediate dashboard access
+    });
+
+  } catch (error) {
+    console.error('Error registering tenant with admin:', error);
+    res.status(500).json({
+      error: 'Failed to register company',
+      message: error.message
+    });
+  }
+});
+
+/**
  * Step 63: GET /api/v1/tenants/me - Get authenticated tenant profile
  */
 router.get('/tenants/me', authenticateTenant, async (req, res) => {

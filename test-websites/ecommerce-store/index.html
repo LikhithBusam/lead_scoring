@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TechGear Store - Premium Electronics & Gadgets</title>
+    <link rel="stylesheet" href="styles.css">
+
+    <!-- LEAD SCORING TRACKING SCRIPT - mantify -->
+    <script
+      src="http://localhost:3001/tracking-plugin/lead-scorer.js"
+      data-website-id="b780c4ba-91aa-4a6e-82f8-dae91f3a6065"
+      data-api-key="lsk_f4ba38b57529530bda94d71945a864cff89dee9d8b10a2cf826867ad9491af01"
+      data-api-url="http://localhost:3001/api/v1"
+      data-debug="true">
+    </script>
+
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="logo">⚡ TechGear</div>
+            <ul class="nav-menu">
+                <li><a href="index.html" class="active">Home</a></li>
+                <li><a href="products.html">Products</a></li>
+                <li><a href="cart.html">Cart <span class="cart-count">0</span></a></li>
+            </ul>
+            <div class="nav-actions" id="navButtons">
+                <a href="login.html" class="btn-login">Login</a>
+                <a href="signup.html" class="btn-signup">Sign Up</a>
+                <a href="cart.html" class="cart-icon">🛒 <span class="cart-count">0</span></a>
+            </div>
+        </div>
+    </nav>
+
+    <header class="hero">
+        <div class="hero-content">
+            <h1>Latest Tech at Your Fingertips</h1>
+            <p>Discover premium electronics, accessories, and gadgets with fast shipping and great prices</p>
+            <button class="btn-primary" onclick="window.location.href='products.html'">Shop Now</button>
+        </div>
+    </header>
+
+    <section class="featured-categories">
+        <div class="container">
+            <h2>Shop by Category</h2>
+            <div class="category-grid">
+                <div class="category-card" onclick="handleCategoryClick('Smartphones')">
+                    <div class="category-icon">📱</div>
+                    <h3>Smartphones</h3>
+                </div>
+                <div class="category-card" onclick="handleCategoryClick('Laptops')">
+                    <div class="category-icon">💻</div>
+                    <h3>Laptops</h3>
+                </div>
+                <div class="category-card" onclick="handleCategoryClick('Headphones')">
+                    <div class="category-icon">🎧</div>
+                    <h3>Headphones</h3>
+                </div>
+                <div class="category-card" onclick="handleCategoryClick('Cameras')">
+                    <div class="category-icon">📷</div>
+                    <h3>Cameras</h3>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="featured-products">
+        <div class="container">
+            <h2>Featured Products</h2>
+            <div class="product-grid">
+                <div class="product-card">
+                    <div class="product-image">📱</div>
+                    <h3>Pro X Smartphone</h3>
+                    <p class="product-desc">Latest flagship with 5G</p>
+                    <div class="product-price">$999</div>
+                    <div class="product-actions">
+                        <button class="btn-secondary" onclick="handleProductView('Pro X Smartphone')">View Details</button>
+                        <button class="btn-primary" onclick="handleAddToCart('Pro X Smartphone', 999)">Add to Cart</button>
+                    </div>
+                </div>
+
+                <div class="product-card">
+                    <div class="product-image">💻</div>
+                    <h3>Ultra Laptop Pro</h3>
+                    <p class="product-desc">Powerful performance laptop</p>
+                    <div class="product-price">$1,499</div>
+                    <div class="product-actions">
+                        <button class="btn-secondary" onclick="handleProductView('Ultra Laptop Pro')">View Details</button>
+                        <button class="btn-primary" onclick="handleAddToCart('Ultra Laptop Pro', 1499)">Add to Cart</button>
+                    </div>
+                </div>
+
+                <div class="product-card">
+                    <div class="product-image">🎧</div>
+                    <h3>Noise-Cancel Pro</h3>
+                    <p class="product-desc">Premium wireless headphones</p>
+                    <div class="product-price">$299</div>
+                    <div class="product-actions">
+                        <button class="btn-secondary" onclick="handleProductView('Noise-Cancel Pro')">View Details</button>
+                        <button class="btn-primary" onclick="handleAddToCart('Noise-Cancel Pro', 299)">Add to Cart</button>
+                    </div>
+                </div>
+
+                <div class="product-card">
+                    <div class="product-image">📷</div>
+                    <h3>Mirrorless Camera X1</h3>
+                    <p class="product-desc">Professional 4K camera</p>
+                    <div class="product-price">$1,999</div>
+                    <div class="product-actions">
+                        <button class="btn-secondary" onclick="handleProductView('Mirrorless Camera X1')">View Details</button>
+                        <button class="btn-primary" onclick="handleAddToCart('Mirrorless Camera X1', 1999)">Add to Cart</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="promo-banner">
+        <div class="container">
+            <h2>🎉 Free Shipping on Orders Over $50!</h2>
+            <p>Limited time offer. Terms and conditions apply.</p>
+            <button class="btn-white" onclick="window.location.href='products.html'">Shop Now</button>
+        </div>
+    </section>
+
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-grid">
+                <div>
+                    <h4>About TechGear</h4>
+                    <p>Your trusted source for premium electronics and tech accessories.</p>
+                </div>
+                <div>
+                    <h4>Quick Links</h4>
+                    <ul>
+                        <li><a href="products.html">Products</a></li>
+                        <li><a href="#">About Us</a></li>
+                        <li><a href="#">Contact</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4>Customer Service</h4>
+                    <ul>
+                        <li><a href="#">Shipping Info</a></li>
+                        <li><a href="#">Returns</a></li>
+                        <li><a href="#">Support</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 TechGear Store. All rights reserved.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

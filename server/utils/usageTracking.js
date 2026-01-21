@@ -21,26 +21,28 @@ async function getCurrentMonthUsage(tenantId) {
   const month = now.getMonth() + 1; // 1-12
   const year = now.getFullYear();
 
-  // Try to get existing record
+  // Try to get existing record - check both column naming conventions
   const { data: existing } = await supabase
     .from('tenant_usage')
     .select('*')
     .eq('tenant_id', tenantId)
-    .eq('month', month)
-    .eq('year', year)
+    .or(`period_month.eq.${month},month.eq.${month}`)
+    .or(`period_year.eq.${year},year.eq.${year}`)
     .single();
 
   if (existing) {
     return existing;
   }
 
-  // Create new record for this month
+  // Create new record for this month - use both column naming conventions
   const { data: newUsage, error } = await supabase
     .from('tenant_usage')
     .insert({
       tenant_id: tenantId,
-      month,
-      year,
+      period_month: month,
+      period_year: year,
+      month: month,
+      year: year,
       leads_created: 0,
       api_calls_made: 0,
       storage_used_mb: 0
@@ -50,7 +52,8 @@ async function getCurrentMonthUsage(tenantId) {
 
   if (error) {
     console.error('Error creating usage record:', error);
-    throw error;
+    // Don't throw - just return null so tracking can continue
+    return { usage_id: null, api_calls_made: 0, leads_created: 0 };
   }
 
   return newUsage;
@@ -64,11 +67,16 @@ async function getCurrentMonthUsage(tenantId) {
 export async function incrementApiCalls(tenantId) {
   try {
     const usage = await getCurrentMonthUsage(tenantId);
+    
+    // If no usage record (graceful fallback), skip update
+    if (!usage || !usage.usage_id) {
+      return null;
+    }
 
     const { data, error } = await supabase
       .from('tenant_usage')
       .update({
-        api_calls_made: usage.api_calls_made + 1,
+        api_calls_made: (usage.api_calls_made || 0) + 1,
         last_updated: new Date().toISOString()
       })
       .eq('usage_id', usage.usage_id)
@@ -92,11 +100,16 @@ export async function incrementApiCalls(tenantId) {
 export async function incrementLeadsCreated(tenantId) {
   try {
     const usage = await getCurrentMonthUsage(tenantId);
+    
+    // If no usage record (graceful fallback), skip update
+    if (!usage || !usage.usage_id) {
+      return null;
+    }
 
     const { data, error } = await supabase
       .from('tenant_usage')
       .update({
-        leads_created: usage.leads_created + 1,
+        leads_created: (usage.leads_created || 0) + 1,
         last_updated: new Date().toISOString()
       })
       .eq('usage_id', usage.usage_id)
