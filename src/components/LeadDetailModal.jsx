@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { X, Save, Search, TrendingUp, TrendingDown, FileText } from 'lucide-react'
 
-const LeadDetailModal = ({ lead, onClose, onUpdate }) => {
+const LeadDetailModal = ({ lead, onClose, onUpdate, apiKey }) => {
   const [formData, setFormData] = useState({ ...lead })
   const [showResearchModal, setShowResearchModal] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -36,15 +36,31 @@ const LeadDetailModal = ({ lead, onClose, onUpdate }) => {
     try {
       // Extract email domain from lead email
       const emailDomain = formData.email ? formData.email.split('@')[1] : null
+      
+      // Smart company name detection
+      let companyName = formData.company?.trim()
+      
+      // If company is N/A or invalid, try to derive from email domain
+      if (!companyName || companyName.toLowerCase() === 'n/a' || companyName.toLowerCase() === 'na' || companyName.toLowerCase() === 'none') {
+        if (emailDomain) {
+          // Convert email domain to company name (e.g., "zopkit.com" -> "Zopkit")
+          companyName = emailDomain.split('.')[0].charAt(0).toUpperCase() + emailDomain.split('.')[0].slice(1)
+        } else {
+          setResearchError('Cannot generate research: No company name or email domain available. Please add a company name or email address.')
+          setIsResearching(false)
+          return
+        }
+      }
 
       const response = await fetch('/api/company-research', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-API-Key': apiKey
         },
         body: JSON.stringify({
-          companyName: formData.company,
-          companyWebsite: null, // Can be added if available
+          companyName: companyName,
+          companyWebsite: emailDomain ? `https://${emailDomain}` : null,
           emailDomain: emailDomain
         }),
       })
@@ -52,7 +68,7 @@ const LeadDetailModal = ({ lead, onClose, onUpdate }) => {
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to generate research')
+        throw new Error(data.message || data.error || 'Failed to generate research')
       }
 
       setResearchReport(data.report)
@@ -447,22 +463,36 @@ const LeadDetailModal = ({ lead, onClose, onUpdate }) => {
                     <nav className="space-y-1">
                       {(() => {
                         const sections = researchReport.split(/\[SECTION:([^\]]+)\]/).filter(Boolean);
-                        const sectionNames = [];
+                        const sectionData = [];
                         for (let i = 0; i < sections.length; i += 2) {
-                          if (sections[i]) sectionNames.push(sections[i].trim());
+                          const name = sections[i]?.trim();
+                          const content = sections[i + 1]?.trim() || '';
+                          if (name) sectionData.push({ name, content });
                         }
-                        return sectionNames.map((name, idx) => (
+                        
+                        // Filter out sections that are mostly "Not publicly available"
+                        const visibleSections = sectionData.filter(section => {
+                          const lines = section.content.split('\n').filter(line => line.trim());
+                          const notAvailableLines = lines.filter(line => 
+                            line.toLowerCase().includes('not publicly available') ||
+                            line.toLowerCase().includes('not available')
+                          );
+                          // Show section if less than 70% of lines are "not available"
+                          return notAvailableLines.length < (lines.length * 0.7);
+                        });
+                        
+                        return visibleSections.map((section, idx) => (
                           <button
                             key={idx}
-                            onClick={() => setActiveSection(name)}
+                            onClick={() => setActiveSection(section.name)}
                             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left text-sm transition-all ${
-                              activeSection === name
+                              activeSection === section.name
                                 ? 'bg-blue-600 text-white shadow-md'
                                 : 'text-slate-700 hover:bg-slate-200'
                             }`}
                           >
                             <FileText className="h-4 w-4 flex-shrink-0" />
-                            <span className="truncate">{name}</span>
+                            <span className="truncate">{section.name}</span>
                           </button>
                         ));
                       })()}
@@ -495,7 +525,7 @@ const LeadDetailModal = ({ lead, onClose, onUpdate }) => {
                         🤖 AI Analysis
                       </span>
                       <span className="px-4 py-2 bg-green-50 text-green-600 rounded-full text-sm font-medium animate-pulse">
-                        📊 17 Sections
+                        📊 9 Sections
                       </span>
                     </div>
                   </div>
@@ -534,21 +564,12 @@ const LeadDetailModal = ({ lead, onClose, onUpdate }) => {
                       
                       const sectionIcons = {
                         'Company Overview': '🏢',
-                        'Visual Timeline': '📅',
                         'Product Summary': '📦',
+                        'Financial Information': '💰',
+                        'Key People': '👔',
                         'Competitors': '⚔️',
                         'Technology & Digital Presence': '🌐',
-                        'Technology Used': '💻',
-                        'Search Keyword Analysis': '🔍',
-                        'Hiring & Openings': '👥',
-                        'Financial Information': '💰',
-                        'Job Opening Trends': '📈',
-                        'Web Traffic': '📊',
-                        'Key People': '👔',
                         'Recent News & Press': '📰',
-                        'Website Changes': '🔄',
-                        'Acquisitions': '🤝',
-                        'Domains': '🌍',
                         'SWOT Analysis': '📋',
                         'Final Summary': '✅'
                       };

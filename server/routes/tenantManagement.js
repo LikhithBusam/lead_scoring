@@ -760,10 +760,12 @@ router.get('/websites/:id/pages', authenticateTenant, async (req, res) => {
       });
     }
 
+    // Only show pages that are actively tracked (is_tracked = true)
     const { data: pages, error } = await supabase
       .from('tenant_pages')
       .select('*')
       .eq('website_id', websiteId)
+      .eq('is_tracked', true)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -872,10 +874,10 @@ router.delete('/websites/:id/pages/:pageId', authenticateTenant, async (req, res
       });
     }
 
-    // Soft delete by setting is_tracked to false
+    // Hard delete the page (user expects it to be removed)
     const { error } = await supabase
       .from('tenant_pages')
-      .update({ is_tracked: false })
+      .delete()
       .eq('page_id', pageId)
       .eq('website_id', websiteId);
 

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import {
     Globe, Plus, Settings, Eye, Check, X, RefreshCw,
     FileText, Zap, AlertCircle, ChevronRight, Code,
-    Building2, BarChart3, Target, Layers
+    Building2, BarChart3, Target, Layers, Trash2
 } from 'lucide-react'
 
 const AdminDashboard = ({ apiKey }) => {
@@ -157,6 +157,33 @@ const AdminDashboard = ({ apiKey }) => {
             }
         } catch (error) {
             console.error('Error updating page:', error)
+        }
+    }
+
+    // Delete page
+    const handleDeletePage = async (pageId, pageName) => {
+        if (!selectedWebsite) return
+
+        // Confirmation dialog
+        const confirmed = window.confirm(`Are you sure you want to delete the page "${pageName}"?\n\nThis action cannot be undone.`)
+        if (!confirmed) return
+
+        try {
+            const response = await fetch(`/api/v1/websites/${selectedWebsite.website_id}/pages/${pageId}`, {
+                method: 'DELETE',
+                headers: {
+                    'X-API-Key': apiKey
+                }
+            })
+            const data = await response.json()
+            if (data.success) {
+                fetchPages(selectedWebsite.website_id)
+            } else {
+                alert('Error: ' + (data.error || 'Failed to delete page'))
+            }
+        } catch (error) {
+            console.error('Error deleting page:', error)
+            alert('Failed to delete page')
         }
     }
 
@@ -447,6 +474,7 @@ const AdminDashboard = ({ apiKey }) => {
                                                         <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">Category</th>
                                                         <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">Points</th>
                                                         <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">Status</th>
+                                                        <th className="text-left px-4 py-2 text-xs font-medium text-gray-500">Actions</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-100">
@@ -473,6 +501,15 @@ const AdminDashboard = ({ apiKey }) => {
                                                                 <span className={`px-2 py-0.5 rounded text-xs ${page.is_tracked ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                                                                     {page.is_tracked ? 'Tracked' : 'Disabled'}
                                                                 </span>
+                                                            </td>
+                                                            <td className="px-4 py-3">
+                                                                <button
+                                                                    onClick={() => handleDeletePage(page.page_id, page.page_name)}
+                                                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                                    title="Delete page"
+                                                                >
+                                                                    <Trash2 className="h-4 w-4" />
+                                                                </button>
                                                             </td>
                                                         </tr>
                                                     ))}

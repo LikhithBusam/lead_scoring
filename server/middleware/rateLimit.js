@@ -12,15 +12,18 @@ export const apiLimiter = rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 });
 
-// Strict rate limiter for authentication endpoints - 5 requests per 15 minutes
+// Strict rate limiter for authentication endpoints - 10 requests per 15 minutes
+// Count ALL requests (both failed and successful) to prevent credential stuffing
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 10,
   message: {
     error: 'Too many authentication attempts, please try again later.',
     code: 'AUTH_RATE_LIMIT_EXCEEDED'
   },
-  skipSuccessfulRequests: true, // Don't count successful requests
+  skipSuccessfulRequests: false, // Count ALL requests for security
+  standardHeaders: true,
+  legacyHeaders: false
 });
 
 // Activity tracking limiter - 50 requests per minute (high volume expected)

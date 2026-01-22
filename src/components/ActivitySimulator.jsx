@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
-  Eye, FileText, Mail, Calendar, Download, ShoppingCart,
-  MessageSquare, Phone, Star, TrendingUp, RefreshCw, Zap,
-  Globe, DollarSign, Users, BookOpen, Video, Send, Database
+  Eye, FileText, Mail, Calendar, Download,
+  Star, TrendingUp, RefreshCw, Zap,
+  Globe, Users, BookOpen, Video, Database, Clock, ExternalLink
 } from 'lucide-react'
 
 // Icon mapping for activity types
@@ -15,41 +15,61 @@ const iconMap = {
   'event_registration': Calendar,
   'event_attendance': Video,
   'session': Globe,
+  'cta_click': Zap,
 }
 
-// Color mapping for intent levels
-const intentColorMap = {
-  'high': 'bg-red-500',
-  'medium': 'bg-orange-500',
-  'low': 'bg-blue-500',
+// Color mapping for activity types
+const activityColorMap = {
+  'page_view': 'bg-blue-500',
+  'form_submission': 'bg-green-500',
+  'content_download': 'bg-purple-500',
+  'content_view': 'bg-indigo-500',
+  'email_engagement': 'bg-yellow-500',
+  'event_registration': 'bg-pink-500',
+  'event_attendance': 'bg-red-500',
+  'session': 'bg-teal-500',
+  'cta_click': 'bg-orange-500',
 }
 
 const ActivitySimulator = ({ onActivityTracked, apiKey }) => {
   const [leads, setLeads] = useState([])
   const [selectedLead, setSelectedLead] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [trackingActivity, setTrackingActivity] = useState(null)
-  const [activityLog, setActivityLog] = useState([])
-  const [scoreAnimation, setScoreAnimation] = useState(null)
-  const [behavioralRules, setBehavioralRules] = useState([])
-  const [rulesLoading, setRulesLoading] = useState(true)
+  const [activitiesLoading, setActivitiesLoading] = useState(false)
+  const [realActivities, setRealActivities] = useState([])
+  const [pollingEnabled, setPollingEnabled] = useState(true)
 
   // Fetch leads on mount
   useEffect(() => {
     fetchLeads()
-    fetchScoringRules()
   }, [])
+
+  // Fetch activities when lead is selected
+  useEffect(() => {
+    if (selectedLead) {
+      fetchLeadActivities(selectedLead.id)
+    }
+  }, [selectedLead])
+
+  // Poll for new activities every 10 seconds
+  useEffect(() => {
+    if (!selectedLead || !pollingEnabled) return
+
+    const interval = setInterval(() => {
+      fetchLeadActivities(selectedLead.id, true) // silent refresh
+    }, 10000)
+
+    return () => clearInterval(interval)
+  }, [selectedLead, pollingEnabled])
 
   const fetchLeads = async () => {
     try {
-      // Use multi-tenant API with API key authentication
       const response = await fetch('/api/v1/leads', {
         headers: {
-          'X-API-Key': apiKey || 'lsk_2d91cf1664597e572e0cf054c820fa32992ea8ee0b27bcd7b2e96ee89121a7d9'
+          'X-API-Key': apiKey
         }
       })
       const data = await response.json()
-      // Multi-tenant API returns {success, leads: [...]}
       const leadsArray = data.leads || []
       setLeads(leadsArray)
       if (leadsArray.length > 0 && !selectedLead) {
@@ -62,117 +82,37 @@ const ActivitySimulator = ({ onActivityTracked, apiKey }) => {
     }
   }
 
-  // Fetch scoring rules from database
-  const fetchScoringRules = async () => {
+  // Fetch real activities from database for selected lead
+  const fetchLeadActivities = async (leadId, silent = false) => {
+    if (!silent) setActivitiesLoading(true)
+
     try {
-      // Include API key for authentication
-      const response = await fetch('/api/scoring-rules', {
+      const response = await fetch(`/api/v1/leads/${leadId}/activities?limit=50`, {
         headers: {
-          'X-API-Key': apiKey || 'lsk_2d91cf1664597e572e0cf054c820fa32992ea8ee0b27bcd7b2e96ee89121a7d9'
+          'X-API-Key': apiKey
         }
       })
-      const data = await response.json()
-      setBehavioralRules(data.behavioral || [])
-    } catch (error) {
-      console.error('Error fetching scoring rules:', error)
-    } finally {
-      setRulesLoading(false)
-    }
-  }
-
-  // Group behavioral rules by activity_type
-  const groupedActivities = behavioralRules.reduce((acc, rule) => {
-    const category = rule.activity_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-    if (!acc[category]) {
-      acc[category] = []
-    }
-    acc[category].push({
-      type: rule.activity_type,
-      subtype: rule.activity_subtype,
-      label: rule.rule_name,
-      points: `+${rule.base_points}`,
-      basePoints: rule.base_points,
-      intentLevel: rule.intent_level,
-      icon: iconMap[rule.activity_type] || Star,
-      color: intentColorMap[rule.intent_level] || 'bg-gray-500'
-    })
-    return acc
-  }, {})
-
-  // Track activity
-  const trackActivity = async (activity) => {
-    if (!selectedLead) return
-
-    setTrackingActivity(activity.type + '_' + activity.subtype)
-
-    try {
-      const response = await fetch('/api/track-activity', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': apiKey || 'lsk_2d91cf1664597e572e0cf054c820fa32992ea8ee0b27bcd7b2e96ee89121a7d9'
-        },
-        body: JSON.stringify({
-          leadId: selectedLead.id,
-          activityType: activity.type,
-          activitySubtype: activity.subtype,
-          metadata: {
-            title: activity.label,
-            timestamp: new Date().toISOString(),
-            device: 'desktop',
-            source: 'simulator'
-          }
-        })
-      })
-
       const data = await response.json()
 
       if (data.success) {
-        // Calculate score change
-        const oldScore = selectedLead.score
-        const newScore = data.newScore
-        const scoreDiff = newScore - oldScore
-
-        // Update selected lead with new score
-        setSelectedLead(prev => ({
-          ...prev,
-          score: data.newScore,
-          classification: data.classification,
-          scoreBreakdown: data.breakdown
-        }))
-
-        // Update leads list
-        setLeads(prev => prev.map(l =>
-          l.id === selectedLead.id
-            ? { ...l, score: data.newScore, classification: data.classification, scoreBreakdown: data.breakdown }
-            : l
-        ))
-
-        // Show score animation
-        setScoreAnimation({ diff: scoreDiff, points: activity.points })
-        setTimeout(() => setScoreAnimation(null), 2000)
-
-        // Add to activity log
-        setActivityLog(prev => [{
-          id: Date.now(),
-          activity: activity.label,
-          points: activity.points,
-          newScore: data.newScore,
-          classification: data.classification,
-          timestamp: new Date().toLocaleTimeString()
-        }, ...prev].slice(0, 10))
-
-        // Notify parent
-        if (onActivityTracked) {
-          onActivityTracked(selectedLead.id, data)
-        }
+        setRealActivities(data.activities || [])
+      } else {
+        console.error('Failed to fetch activities:', data.error)
       }
     } catch (error) {
-      console.error('Error tracking activity:', error)
+      console.error('Error fetching lead activities:', error)
     } finally {
-      setTrackingActivity(null)
+      if (!silent) setActivitiesLoading(false)
     }
   }
+
+  // Refresh lead data and activities
+  const handleRefresh = useCallback(async () => {
+    await fetchLeads()
+    if (selectedLead) {
+      await fetchLeadActivities(selectedLead.id)
+    }
+  }, [selectedLead])
 
   // Get classification color
   const getClassificationColor = (classification) => {
@@ -194,6 +134,32 @@ const ActivitySimulator = ({ onActivityTracked, apiKey }) => {
     return 'text-gray-600'
   }
 
+  // Format timestamp
+  const formatTimestamp = (timestamp) => {
+    const date = new Date(timestamp)
+    const now = new Date()
+    const diffMs = now - date
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins}m ago`
+    if (diffHours < 24) return `${diffHours}h ago`
+    if (diffDays < 7) return `${diffDays}d ago`
+    return date.toLocaleDateString()
+  }
+
+  // Get activity icon
+  const getActivityIcon = (activityType) => {
+    return iconMap[activityType] || Star
+  }
+
+  // Get activity color
+  const getActivityColor = (activityType) => {
+    return activityColorMap[activityType] || 'bg-gray-500'
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -210,7 +176,7 @@ const ActivitySimulator = ({ onActivityTracked, apiKey }) => {
           <Users className="h-5 w-5" />
           Select Lead
         </h3>
-        <div className="space-y-2 max-h-[500px] overflow-y-auto">
+        <div className="space-y-2 max-h-[600px] overflow-y-auto">
           {leads.map(lead => (
             <div
               key={lead.id}
@@ -222,59 +188,83 @@ const ActivitySimulator = ({ onActivityTracked, apiKey }) => {
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">{lead.company}</p>
+                  <p className="text-sm font-medium text-gray-900 truncate">{lead.company || 'N/A'}</p>
                   <p className="text-xs text-gray-500 truncate">{lead.email}</p>
                 </div>
                 <div className={`text-lg font-bold ${getScoreColor(lead.score)}`}>
                   {lead.score}
                 </div>
               </div>
-              <span className={`inline-block mt-1 px-2 py-0.5 text-xs rounded-full ${getClassificationColor(lead.classification)}`}>
-                {lead.classification?.toUpperCase()}
-              </span>
+              <div className="flex items-center justify-between mt-1">
+                <span className={`px-2 py-0.5 text-xs rounded-full ${getClassificationColor(lead.classification)}`}>
+                  {lead.classification?.toUpperCase()}
+                </span>
+                <span className="text-xs text-gray-400">{lead.activityCount || 0} activities</span>
+              </div>
             </div>
           ))}
         </div>
       </div>
 
-      {/* Activity Simulator - Center Panel */}
-      <div className="col-span-6 bg-white rounded-lg shadow-md p-6">
+      {/* Lead Details - Center Panel */}
+      <div className="col-span-5 bg-white rounded-lg shadow-md p-6">
         <div className="flex items-center justify-between mb-6">
           <h3 className="font-semibold text-gray-900 text-lg flex items-center gap-2">
-            <Globe className="h-5 w-5" />
-            Website Activity Simulator
+            <TrendingUp className="h-5 w-5" />
+            Lead Activity Timeline
           </h3>
-          <button
-            onClick={fetchLeads}
-            className="p-2 text-gray-500 hover:text-blue-600 transition-colors"
-            title="Refresh leads"
-          >
-            <RefreshCw className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1 text-xs text-gray-500 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={pollingEnabled}
+                onChange={(e) => setPollingEnabled(e.target.checked)}
+                className="rounded"
+              />
+              Auto-refresh
+            </label>
+            <button
+              onClick={handleRefresh}
+              className="p-2 text-gray-500 hover:text-blue-600 transition-colors"
+              title="Refresh activities"
+            >
+              <RefreshCw className={`h-5 w-5 ${activitiesLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
         </div>
 
         {selectedLead ? (
           <>
-            {/* Current Lead Info */}
+            {/* Lead Info Header */}
             <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 mb-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600">Simulating activity for:</p>
-                  <p className="text-lg font-semibold text-gray-900">{selectedLead.company}</p>
+                  <p className="text-sm text-gray-600">Viewing activities for:</p>
+                  <p className="text-lg font-semibold text-gray-900">{selectedLead.company || 'N/A'}</p>
                   <p className="text-sm text-gray-500">{selectedLead.email}</p>
+                  {/* Classification Reason */}
+                  {selectedLead.classificationReason && (
+                    <p className="text-xs text-gray-600 mt-2 italic">
+                      {selectedLead.classificationReason}
+                    </p>
+                  )}
                 </div>
-                <div className="text-center relative">
-                  <div className={`text-4xl font-bold ${getScoreColor(selectedLead.score)} transition-all`}>
+                <div className="text-center">
+                  <div className={`text-4xl font-bold ${getScoreColor(selectedLead.score)}`}>
                     {selectedLead.score}
-                    {scoreAnimation && (
-                      <span className="absolute -top-2 -right-8 text-lg text-green-500 animate-bounce">
-                        {scoreAnimation.points}
-                      </span>
-                    )}
                   </div>
                   <span className={`inline-block mt-1 px-3 py-1 text-xs rounded-full ${getClassificationColor(selectedLead.classification)}`}>
                     {selectedLead.classification?.toUpperCase()}
                   </span>
+                  {/* Momentum indicator */}
+                  {selectedLead.momentum?.level && selectedLead.momentum.level !== 'none' && (
+                    <div className={`text-xs mt-1 ${
+                      selectedLead.momentum.level === 'high' ? 'text-red-500' :
+                      selectedLead.momentum.level === 'medium' ? 'text-orange-500' : 'text-yellow-500'
+                    }`}>
+                      ⚡ {selectedLead.momentum.level.toUpperCase()} momentum
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -295,115 +285,187 @@ const ActivitySimulator = ({ onActivityTracked, apiKey }) => {
                   </div>
                 </div>
               )}
+
+              {/* Momentum Stats */}
+              {selectedLead.momentum && (
+                <div className="mt-3 grid grid-cols-4 gap-2 text-center">
+                  <div className="bg-white rounded-lg p-2">
+                    <div className="text-sm font-semibold text-purple-600">{selectedLead.momentum.score || 0}</div>
+                    <div className="text-xs text-gray-500">Momentum</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-2">
+                    <div className="text-sm font-semibold text-gray-700">{selectedLead.momentum.actionsLast24h || 0}</div>
+                    <div className="text-xs text-gray-500">24h</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-2">
+                    <div className="text-sm font-semibold text-gray-700">{selectedLead.momentum.actionsLast72h || 0}</div>
+                    <div className="text-xs text-gray-500">72h</div>
+                  </div>
+                  <div className="bg-white rounded-lg p-2">
+                    <div className="text-sm font-semibold text-gray-700">
+                      {selectedLead.momentum.surgeDetected ? '🔥 Yes' : 'No'}
+                    </div>
+                    <div className="text-xs text-gray-500">Surge</div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Activity Buttons - From Database */}
-            <div className="space-y-6">
-              <div className="flex items-center gap-2 text-xs text-gray-500 mb-2">
+            {/* Activity Timeline */}
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-xs text-gray-500 mb-4">
                 <Database className="h-4 w-4" />
-                <span>Rules loaded from database ({behavioralRules.length} rules)</span>
-                <button
-                  onClick={fetchScoringRules}
-                  className="text-blue-500 hover:underline"
-                >
-                  Refresh
-                </button>
+                <span>Real activities from all websites ({realActivities.length} total)</span>
               </div>
 
-              {rulesLoading ? (
-                <div className="text-center py-8 text-gray-500">Loading rules from database...</div>
-              ) : Object.keys(groupedActivities).length === 0 ? (
-                <div className="text-center py-8 text-gray-500">No behavioral rules found in database</div>
+              {activitiesLoading ? (
+                <div className="text-center py-8 text-gray-500">
+                  <RefreshCw className="h-8 w-8 animate-spin mx-auto mb-2" />
+                  Loading activities...
+                </div>
+              ) : realActivities.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  <Globe className="h-12 w-12 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No activities tracked yet</p>
+                  <p className="text-xs mt-1">Activities will appear here when the lead visits your websites</p>
+                </div>
               ) : (
-                Object.entries(groupedActivities).map(([category, activities]) => (
-                  <div key={category}>
-                    <h4 className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
-                      {category}
-                      <span className="text-xs text-gray-400">({activities.length} rules)</span>
-                    </h4>
-                    <div className="grid grid-cols-2 gap-3">
-                      {activities.map(activity => {
-                        const Icon = activity.icon
-                        const isTracking = trackingActivity === activity.type + '_' + activity.subtype
+                <div className="space-y-3 max-h-[400px] overflow-y-auto">
+                  {realActivities.map((activity, index) => {
+                    const Icon = getActivityIcon(activity.type)
+                    const color = getActivityColor(activity.type)
 
-                        return (
-                          <button
-                            key={activity.type + '_' + activity.subtype}
-                            onClick={() => trackActivity(activity)}
-                            disabled={isTracking}
-                            className={`flex items-center gap-3 p-3 rounded-lg border-2 border-gray-200 hover:border-blue-400 hover:bg-blue-50 transition-all ${isTracking ? 'opacity-50 cursor-wait' : ''
-                              }`}
-                          >
-                            <div className={`p-2 rounded-lg ${activity.color}`}>
-                              <Icon className="h-5 w-5 text-white" />
-                            </div>
-                            <div className="flex-1 text-left">
-                              <p className="text-sm font-medium text-gray-900 truncate" title={activity.label}>
-                                {activity.label}
+                    return (
+                      <div
+                        key={activity.id || index}
+                        className="flex gap-3 p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                      >
+                        <div className={`p-2 rounded-lg ${color} flex-shrink-0`}>
+                          <Icon className="h-4 w-4 text-white" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">
+                                {activity.subtype ?
+                                  activity.subtype.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) :
+                                  activity.type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+                                }
                               </p>
-                              <div className="flex items-center gap-2">
-                                <span className="text-xs text-green-600 font-semibold">{activity.points} pts</span>
-                                <span className={`text-xs px-1.5 py-0.5 rounded ${activity.intentLevel === 'high' ? 'bg-red-100 text-red-700' :
-                                  activity.intentLevel === 'medium' ? 'bg-orange-100 text-orange-700' :
-                                    'bg-blue-100 text-blue-700'
-                                  }`}>
-                                  {activity.intentLevel}
-                                </span>
-                              </div>
+                              <p className="text-xs text-gray-500 mt-0.5">
+                                {activity.type.replace(/_/g, ' ')}
+                              </p>
                             </div>
-                            {isTracking && (
-                              <Zap className="h-5 w-5 text-yellow-500 animate-pulse" />
-                            )}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))
+                            <div className="text-right flex-shrink-0">
+                              <span className="text-sm font-semibold text-green-600">
+                                +{activity.points || 0} pts
+                              </span>
+                            </div>
+                          </div>
+
+                          {activity.pageUrl && (
+                            <div className="flex items-center gap-1 mt-1 text-xs text-blue-600">
+                              <ExternalLink className="h-3 w-3" />
+                              <span className="truncate max-w-[200px]" title={activity.pageUrl}>
+                                {activity.pageUrl}
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-2 mt-2 text-xs text-gray-400">
+                            <Clock className="h-3 w-3" />
+                            <span>{formatTimestamp(activity.timestamp)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               )}
             </div>
           </>
         ) : (
           <div className="text-center text-gray-500 py-12">
-            Select a lead from the left panel to simulate activity
+            Select a lead from the left panel to view their activity
           </div>
         )}
       </div>
 
-      {/* Activity Log - Right Panel */}
-      <div className="col-span-3 bg-white rounded-lg shadow-md p-4">
+      {/* Activity Summary - Right Panel */}
+      <div className="col-span-4 bg-white rounded-lg shadow-md p-4">
         <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-          <TrendingUp className="h-5 w-5" />
-          Activity Log
+          <Zap className="h-5 w-5" />
+          Activity Summary
         </h3>
 
-        {activityLog.length > 0 ? (
-          <div className="space-y-3 max-h-[500px] overflow-y-auto">
-            {activityLog.map(log => (
-              <div key={log.id} className="bg-gray-50 rounded-lg p-3 border-l-4 border-green-500">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-gray-900">{log.activity}</p>
-                  <span className="text-xs text-green-600 font-semibold">{log.points}</span>
-                </div>
-                <div className="flex items-center justify-between mt-1">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${getClassificationColor(log.classification)}`}>
-                    {log.classification?.toUpperCase()}
-                  </span>
-                  <span className="text-xs text-gray-500">{log.timestamp}</span>
-                </div>
-                <div className="text-right mt-1">
-                  <span className={`text-lg font-bold ${getScoreColor(log.newScore)}`}>
-                    Score: {log.newScore}
-                  </span>
-                </div>
+        {selectedLead && realActivities.length > 0 ? (
+          <div className="space-y-4">
+            {/* Activity Type Breakdown */}
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 mb-3">By Activity Type</h4>
+              <div className="space-y-2">
+                {Object.entries(
+                  realActivities.reduce((acc, activity) => {
+                    const type = activity.type || 'unknown'
+                    if (!acc[type]) {
+                      acc[type] = { count: 0, points: 0 }
+                    }
+                    acc[type].count++
+                    acc[type].points += activity.points || 0
+                    return acc
+                  }, {})
+                ).sort((a, b) => b[1].count - a[1].count).map(([type, data]) => {
+                  const Icon = getActivityIcon(type)
+                  const color = getActivityColor(type)
+
+                  return (
+                    <div key={type} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                      <div className="flex items-center gap-2">
+                        <div className={`p-1.5 rounded ${color}`}>
+                          <Icon className="h-3 w-3 text-white" />
+                        </div>
+                        <span className="text-sm text-gray-700">
+                          {type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-medium text-gray-900">{data.count}x</span>
+                        <span className="text-xs text-green-600 ml-2">+{data.points} pts</span>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
-            ))}
+            </div>
+
+            {/* Total Points */}
+            <div className="border-t pt-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">Total Behavioral Points</span>
+                <span className="text-lg font-bold text-green-600">
+                  +{realActivities.reduce((sum, a) => sum + (a.points || 0), 0)} pts
+                </span>
+              </div>
+            </div>
+
+            {/* Recent Activity */}
+            <div className="border-t pt-4">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">Most Recent</h4>
+              {realActivities.slice(0, 3).map((activity, i) => (
+                <div key={i} className="text-xs text-gray-500 py-1 border-b border-gray-100 last:border-0">
+                  <span className="font-medium text-gray-700">
+                    {activity.subtype || activity.type}
+                  </span>
+                  <span className="float-right">{formatTimestamp(activity.timestamp)}</span>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <div className="text-center text-gray-400 py-8">
             <TrendingUp className="h-12 w-12 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">No activities yet</p>
-            <p className="text-xs">Click buttons to simulate activity</p>
+            <p className="text-sm">No activity data</p>
+            <p className="text-xs mt-1">Select a lead to view their activity summary</p>
           </div>
         )}
       </div>

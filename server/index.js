@@ -1,5 +1,7 @@
 import express from 'express';
 import cors from 'cors';
+import compression from 'compression';
+import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import { ChatGroq } from '@langchain/groq';
@@ -7,6 +9,7 @@ import { HumanMessage } from '@langchain/core/messages';
 import { tavily } from '@tavily/core';
 import { z } from 'zod';
 import { authenticateToken, authorizeRole, optionalAuth } from './middleware/auth.js';
+import { authenticateTenant } from './middleware/tenantAuth.js';
 import { apiLimiter, activityLimiter, researchLimiter, authLimiter } from './middleware/rateLimit.js';
 import helmet from 'helmet';
 import authRoutes from './routes/auth.js';
@@ -14,7 +17,12 @@ import trackingRoutes from './routes/tracking.js';
 import tenantLeadsRoutes from './routes/tenantLeads.js';
 import tenantManagementRoutes from './routes/tenantManagement.js';
 import logger, { requestLogger, logActivity, logSecurityEvent, logError } from './utils/logger.js';
-import { initializeCache, closeCache } from './utils/cache.js';
+import { initializeCache, closeCache, getCache, setCache, CACHE_KEYS } from './utils/cache.js';
+import { CACHE_CONFIG } from './config/scoringConstants.js';
+import { validateEnvOrExit } from './utils/validateEnv.js';
+import { sanitizeAll } from './utils/sanitize.js';
+import { csrfProtection, csrfTokenEndpoint } from './middleware/csrf.js';
+import { startMomentumDecayScheduler, stopMomentumDecayScheduler } from './jobs/momentumDecay.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -22,6 +30,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
+
+// Validate environment variables on startup
+validateEnvOrExit();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -39,8 +50,8 @@ const llm = new ChatGroq({
   temperature: 0.3,
 });
 
-// Initialize Tavily for real-time web search
-const tvly = tavily({ apiKey: process.env.TAVILY_API_KEY });
+// Initialize Tavily only if API key is provided (optional for cost savings)
+const tvly = process.env.TAVILY_API_KEY ? tavily({ apiKey: process.env.TAVILY_API_KEY }) : null;
 
 // Serper API helper function (Google Search)
 async function searchWithSerper(query) {
@@ -93,6 +104,18 @@ app.use(cors({
 
 app.use(express.json({ limit: '10mb' }));
 
+// Cookie parser for httpOnly cookies
+app.use(cookieParser());
+
+// Response compression (reduces response size by 3-5x)
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
+  level: 6 // Balance between speed and compression ratio
+}));
+
 // Serve tracking plugin as static file
 app.use('/tracking-plugin', express.static(path.join(__dirname, '..', 'tracking-plugin')));
 
@@ -101,6 +124,15 @@ app.use(requestLogger);
 
 // Apply global rate limiting to all API routes
 app.use('/api/', apiLimiter);
+
+// Input sanitization (XSS protection)
+app.use(sanitizeAll);
+
+// CSRF protection for state-changing requests
+app.use(csrfProtection);
+
+// CSRF token endpoint
+app.get('/api/csrf-token', csrfTokenEndpoint);
 
 // Input validation schemas
 const trackActivitySchema = z.object({
@@ -112,27 +144,44 @@ const trackActivitySchema = z.object({
 
 const updateLeadSchema = z.object({
   name: z.string().max(255).optional(),
-  email: z.string().email().optional(),
-  phone: z.string().max(50).optional(),
+  email: z.string().email('Invalid email format').optional(),
+  phone: z.string().max(50).regex(/^[+\d\s\-()]*$/, 'Invalid phone format').optional(),
   company: z.string().max(255).optional(),
   jobTitle: z.string().max(255).optional(),
-  industry: z.string().max(255).optional(),
+  industry: z.string().max(100).optional(),
   companySize: z.string().max(50).optional(),
   location: z.string().max(255).optional()
 });
 
+// Strengthened validation for company research (prevents prompt injection)
 const companyResearchSchema = z.object({
-  companyName: z.string().min(1).max(500),
-  companyWebsite: z.string().optional().nullable(),
-  emailDomain: z.string().max(255).optional().nullable()
+  companyName: z.string()
+    .min(1, 'Company name required')
+    .max(100, 'Company name too long')
+    .regex(/^[a-zA-Z0-9\s\-\.&',\/()]+$/, 'Invalid characters in company name')
+    .refine(val => val.toLowerCase() !== 'n/a' && val.toLowerCase() !== 'na' && val.toLowerCase() !== 'none', {
+      message: 'Please provide a valid company name. Cannot use N/A, NA, or None.'
+    }),
+  companyWebsite: z.string()
+    .max(200)
+    .regex(/^(https?:\/\/)?[a-zA-Z0-9][a-zA-Z0-9\-\.]*\.[a-zA-Z]{2,}/, 'Invalid website format')
+    .optional()
+    .nullable()
+    .or(z.literal('')), // Allow domain with or without protocol
+  emailDomain: z.string()
+    .max(100)
+    .regex(/^[a-zA-Z0-9][a-zA-Z0-9\-\.]*\.[a-zA-Z]{2,}$/, 'Invalid domain format')
+    .optional()
+    .nullable()
+    .or(z.literal('')) // Allow empty string
 });
 
 // =====================================================
 // DATABASE-DRIVEN SCORING ENGINE
 // =====================================================
 
-// Cache for scoring rules (refreshed every 5 minutes)
-let scoringRulesCache = {
+// In-memory fallback cache (used when Redis is unavailable)
+let inMemoryRulesCache = {
   demographic: [],
   behavioral: [],
   negative: [],
@@ -140,39 +189,61 @@ let scoringRulesCache = {
   lastFetched: null
 };
 
-// Fetch scoring rules from database
+const SCORING_RULES_CACHE_KEY = 'system:scoring_rules';
+const CACHE_TTL_SECONDS = Math.floor(CACHE_CONFIG.RULES_CACHE_TTL / 1000); // Convert ms to seconds
+
+/**
+ * Fetch scoring rules with unified caching strategy
+ * Priority: Redis cache -> In-memory cache -> Database
+ */
 async function fetchScoringRulesFromDB() {
   const now = Date.now();
-  const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-  
-  // Return cached if still valid
-  if (scoringRulesCache.lastFetched && (now - scoringRulesCache.lastFetched) < CACHE_TTL) {
-    return scoringRulesCache;
-  }
-  
+
+  // 1. Try Redis cache first
   try {
-    // Fetch all rules in parallel
+    const redisCache = await getCache(SCORING_RULES_CACHE_KEY);
+    if (redisCache) {
+      // Update in-memory fallback
+      inMemoryRulesCache = { ...redisCache, lastFetched: now };
+      return redisCache;
+    }
+  } catch (err) {
+    // Redis unavailable, continue to fallback
+  }
+
+  // 2. Check in-memory cache (fallback when Redis unavailable)
+  if (inMemoryRulesCache.lastFetched && (now - inMemoryRulesCache.lastFetched) < CACHE_CONFIG.RULES_CACHE_TTL) {
+    return inMemoryRulesCache;
+  }
+
+  // 3. Fetch from database
+  try {
     const [demographicRes, behavioralRes, negativeRes, thresholdsRes] = await Promise.all([
       supabase.from('scoring_rules_demographic').select('*').eq('is_active', true).order('priority_order'),
       supabase.from('scoring_rules_behavioral').select('*').eq('is_active', true),
       supabase.from('scoring_rules_negative').select('*').eq('is_active', true),
       supabase.from('scoring_thresholds').select('*').eq('is_active', true).order('min_score', { ascending: false })
     ]);
-    
-    scoringRulesCache = {
+
+    const rules = {
       demographic: demographicRes.data || [],
       behavioral: behavioralRes.data || [],
       negative: negativeRes.data || [],
-      thresholds: thresholdsRes.data || [],
-      lastFetched: now
+      thresholds: thresholdsRes.data || []
     };
-    
-    console.log(`📊 Scoring rules loaded: ${scoringRulesCache.demographic.length} demographic, ${scoringRulesCache.behavioral.length} behavioral, ${scoringRulesCache.negative.length} negative`);
-    
-    return scoringRulesCache;
+
+    // Update both caches
+    inMemoryRulesCache = { ...rules, lastFetched: now };
+
+    // Store in Redis (fire and forget)
+    setCache(SCORING_RULES_CACHE_KEY, rules, CACHE_TTL_SECONDS).catch(() => {});
+
+    console.log(`📊 Scoring rules loaded: ${rules.demographic.length} demographic, ${rules.behavioral.length} behavioral, ${rules.negative.length} negative`);
+
+    return rules;
   } catch (error) {
     console.error('Error fetching scoring rules:', error);
-    return scoringRulesCache; // Return stale cache if fetch fails
+    return inMemoryRulesCache; // Return stale cache if fetch fails
   }
 }
 
@@ -431,27 +502,38 @@ app.get('/api/health', (req, res) => {
 });
 
 // Get all leads from Supabase (Protected - requires authentication)
+// Supports pagination with ?page=1&limit=50 (max 100)
 app.get('/api/leads', authenticateToken, authorizeRole('admin', 'sales', 'user'), async (req, res) => {
   try {
-    // Fetch leads with related data
-    const { data: leads, error } = await supabase
+    // Pagination parameters
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const offset = (page - 1) * limit;
+
+    // Fetch leads with related data and pre-joined scores (fixes N+1 query)
+    const { data: leads, error, count } = await supabase
       .from('leads')
       .select(`
         *,
-        contact:contacts(*),
-        company:companies(*),
-        activities:lead_activities(*)
-      `);
+        contact:contacts(first_name, last_name, email, phone, job_title, has_budget_authority),
+        company:companies(company_name, industry, company_size, employee_count, annual_revenue, revenue_inr_crore, location_city, location),
+        score:lead_scores(total_score, demographic_score, behavioral_score, negative_score, score_classification, last_calculated_at)
+      `, { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) throw error;
 
-    // Transform and calculate scores for each lead
-    const leadsWithScores = await Promise.all(leads.map(async (lead) => {
+    // Transform leads using pre-joined scores (no N+1 queries)
+    const transformedLeads = leads.map((lead) => {
       const fullName = lead.contact
         ? `${lead.contact.first_name || ''} ${lead.contact.last_name || ''}`.trim()
         : 'N/A';
 
-      const transformedLead = {
+      // Get pre-calculated score from lead_scores table
+      const scoreData = lead.score?.[0] || {};
+
+      return {
         id: lead.lead_id,
         name: fullName || 'N/A',
         email: lead.contact?.email || 'N/A',
@@ -469,24 +551,31 @@ app.get('/api/leads', authenticateToken, authorizeRole('admin', 'sales', 'user')
         campaign: lead.campaign_id || '',
         createdAt: lead.created_at,
         lastActivity: lead.last_activity_date || lead.created_at,
-        activities: lead.activities || []
+        score: scoreData.total_score || 0,
+        classification: scoreData.score_classification || 'unqualified',
+        scoreBreakdown: {
+          demographic: scoreData.demographic_score || 0,
+          behavioral: scoreData.behavioral_score || 0,
+          negative: scoreData.negative_score || 0
+        },
+        lastScoreUpdate: scoreData.last_calculated_at || null
       };
-
-      // Use database-driven scoring
-      const scoring = await calculateLeadScoreFromDB(transformedLead, lead.activities || []);
-      
-      return {
-        ...transformedLead,
-        score: scoring.totalScore,
-        classification: scoring.classification,
-        scoreBreakdown: scoring.breakdown,
-        lastScoreUpdate: scoring.calculatedAt
-      };
-    }));
+    });
 
     // Sort by score (highest first)
-    const sortedLeads = leadsWithScores.sort((a, b) => b.score - a.score);
-    res.json(sortedLeads);
+    const sortedLeads = transformedLeads.sort((a, b) => b.score - a.score);
+
+    res.json({
+      success: true,
+      leads: sortedLeads,
+      pagination: {
+        page,
+        limit,
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limit),
+        hasMore: offset + leads.length < (count || 0)
+      }
+    });
   } catch (error) {
     console.error('Error fetching leads:', error);
     res.status(500).json({ error: 'Failed to fetch leads' });
@@ -630,7 +719,7 @@ app.get('/api/scoring-rules', authenticateToken, authorizeRole('admin', 'sales',
       behavioral: rules.behavioral,
       negative: rules.negative,
       thresholds: rules.thresholds,
-      cachedAt: scoringRulesCache.lastFetch
+      cachedAt: inMemoryRulesCache.lastFetched
     });
   } catch (error) {
     console.error('Error fetching scoring rules:', error);
@@ -651,21 +740,60 @@ app.post('/api/track-activity', activityLimiter, optionalAuth, async (req, res) 
     }
 
     const { leadId, activityType, activitySubtype, metadata } = validationResult.data;
-    
-    // Insert activity into database
+
+    // First, get the lead to find the tenant_id
+    const { data: leadData, error: leadFetchError } = await supabase
+      .from('leads')
+      .select('lead_id, tenant_id, contact_id')
+      .eq('lead_id', leadId)
+      .single();
+
+    if (leadFetchError || !leadData) {
+      return res.status(404).json({ error: 'Lead not found' });
+    }
+
+    // Get points for this activity type from behavioral rules
+    let ruleQuery = supabase
+      .from('scoring_rules_behavioral')
+      .select('base_points, rule_name')
+      .eq('activity_type', activityType)
+      .eq('is_active', true);
+
+    // Only filter by subtype if provided
+    if (activitySubtype) {
+      ruleQuery = ruleQuery.eq('activity_subtype', activitySubtype);
+    }
+
+    const { data: rule, error: ruleError } = await ruleQuery.single();
+
+    console.log(`📊 Rule lookup for ${activityType}/${activitySubtype}:`, rule, ruleError?.message);
+
+    const pointsEarned = rule?.base_points || 0;
+
+    // Insert activity into database with correct column names
     const { data: activity, error: activityError } = await supabase
       .from('lead_activities')
       .insert({
         lead_id: leadId,
+        tenant_id: leadData.tenant_id,
+        contact_id: leadData.contact_id,
         activity_type: activityType,
         activity_subtype: activitySubtype || null,
+        activity_title: metadata?.title || rule?.rule_name || `${activityType} - ${activitySubtype || 'general'}`,
         activity_details: metadata || {},
-        created_at: new Date().toISOString()
+        activity_source: metadata?.source || 'simulator',
+        points_earned: pointsEarned,
+        activity_timestamp: new Date().toISOString()
       })
       .select()
       .single();
-    
-    if (activityError) throw activityError;
+
+    if (activityError) {
+      console.error('❌ Activity insert error:', activityError);
+      throw activityError;
+    }
+
+    console.log('✅ Activity inserted:', activity);
 
     // Log activity
     logActivity(leadId, activityType, { activitySubtype, metadata });
@@ -720,6 +848,7 @@ app.post('/api/track-activity', activityLimiter, optionalAuth, async (req, res) 
     res.json({
       success: true,
       activity: activity,
+      pointsEarned: activity.points_earned || 0,
       newScore: scoring.totalScore,
       classification: scoring.classification,
       breakdown: scoring.breakdown,
@@ -727,7 +856,8 @@ app.post('/api/track-activity', activityLimiter, optionalAuth, async (req, res) 
     });
   } catch (error) {
     logError(error, { endpoint: '/api/track-activity', leadId: req.body.leadId });
-    res.status(500).json({ error: 'Failed to track activity' });
+    console.error('Track activity error:', error);
+    res.status(500).json({ error: 'Failed to track activity', details: error.message });
   }
 });
 
@@ -835,8 +965,11 @@ app.get('/api/leads/:id/score-history', authenticateToken, authorizeRole('admin'
 app.post('/api/scoring-rules/refresh', authenticateToken, authorizeRole('admin'), async (req, res) => {
   try {
     // Clear cache
-    scoringRulesCache.rules = null;
-    scoringRulesCache.lastFetch = null;
+    inMemoryRulesCache.demographic = [];
+    inMemoryRulesCache.behavioral = [];
+    inMemoryRulesCache.negative = [];
+    inMemoryRulesCache.thresholds = [];
+    inMemoryRulesCache.lastFetched = null;
     
     // Fetch fresh rules
     const rules = await fetchScoringRulesFromDB();
@@ -850,7 +983,7 @@ app.post('/api/scoring-rules/refresh', authenticateToken, authorizeRole('admin')
         negative: rules.negative.length,
         thresholds: rules.thresholds.length
       },
-      cachedAt: scoringRulesCache.lastFetch
+      cachedAt: inMemoryRulesCache.lastFetched
     });
   } catch (error) {
     console.error('Error refreshing rules:', error);
@@ -858,8 +991,29 @@ app.post('/api/scoring-rules/refresh', authenticateToken, authorizeRole('admin')
   }
 });
 
-// Company Research using Groq AI with Tavily Real-Time Search (Protected - Admin/Sales only)
-app.post('/api/company-research', researchLimiter, authenticateToken, authorizeRole('admin', 'sales'), async (req, res) => {
+// Flexible authentication middleware - accepts either JWT or API Key
+const authenticateFlexible = async (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const apiKey = req.headers['x-api-key'];
+  
+  // Try JWT authentication first
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    return authenticateToken(req, res, next);
+  }
+  
+  // Fall back to API Key authentication
+  if (apiKey) {
+    return authenticateTenant(req, res, next);
+  }
+  
+  return res.status(401).json({
+    error: 'Authentication required. Provide either JWT token or API key.',
+    code: 'UNAUTHORIZED'
+  });
+};
+
+// Company Research using Groq AI with Tavily Real-Time Search (Protected - Admin/Sales or API Key)
+app.post('/api/company-research', researchLimiter, authenticateFlexible, async (req, res) => {
   try {
     // Log the incoming request for debugging
     console.log('📥 Company research request body:', JSON.stringify(req.body, null, 2));
@@ -870,6 +1024,7 @@ app.post('/api/company-research', researchLimiter, authenticateToken, authorizeR
       console.error('❌ Validation failed:', JSON.stringify(validationResult.error.errors, null, 2));
       return res.status(400).json({
         error: 'Invalid input data',
+        message: validationResult.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', '),
         details: validationResult.error.errors
       });
     }
@@ -883,105 +1038,178 @@ app.post('/api/company-research', researchLimiter, authenticateToken, authorizeR
       });
     }
 
-    // Step 1: Use both Serper (Google) and Tavily for comprehensive real-time data
-    console.log(`🔍 Searching real-time data for: ${companyName}`);
+    // Step 1: Enhanced multi-query search for complete company data
+    console.log(`🔍 Searching comprehensive data for: ${companyName}`);
     let searchContext = '';
+    let hasSearchAPI = false;
     
     try {
       const searchPromises = [];
       
-      // Serper (Google Search) - More accurate for company data
+      // Serper (Google Search) - Multiple targeted queries for complete data
       if (process.env.SERPER_API_KEY) {
-        const serperQueries = [
-          `${companyName} company overview headquarters founded`,
-          `${companyName} funding raised investors valuation`,
-          `${companyName} CEO founder leadership team`,
-          `${companyName} revenue employees business model`,
-          `${companyName} competitors industry market share`
-        ];
+        hasSearchAPI = true;
         
-        serperQueries.forEach(query => {
-          searchPromises.push(
-            searchWithSerper(query)
-              .then(result => ({
-                source: 'Google',
-                query,
-                snippets: result.organic?.map(r => `${r.title}: ${r.snippet}`).join('\n') || '',
-                knowledgeGraph: result.knowledgeGraph ? 
-                  `Company: ${result.knowledgeGraph.title || ''}, Description: ${result.knowledgeGraph.description || ''}, Type: ${result.knowledgeGraph.type || ''}` : ''
-              }))
-              .catch(() => ({ source: 'Google', query, snippets: '', knowledgeGraph: '' }))
-          );
-        });
+        // Query 1: Company basics
+        searchPromises.push(
+          searchWithSerper(`${companyName} company founded headquarters location about`)
+            .then(result => ({
+              source: 'Google - Basics',
+              snippets: result.organic?.slice(0, 8).map(r => `${r.title}: ${r.snippet}`).join('\n') || '',
+              knowledgeGraph: result.knowledgeGraph ? 
+                `Company: ${result.knowledgeGraph.title || ''}, Description: ${result.knowledgeGraph.description || ''}, Type: ${result.knowledgeGraph.type || ''}` : ''
+            }))
+            .catch(() => ({ source: 'Google - Basics', snippets: '', knowledgeGraph: '' }))
+        );
+        
+        // Query 2: Leadership & team
+        searchPromises.push(
+          searchWithSerper(`${companyName} CEO founder leadership team executives`)
+            .then(result => ({
+              source: 'Google - Leadership',
+              snippets: result.organic?.slice(0, 5).map(r => `${r.title}: ${r.snippet}`).join('\n') || ''
+            }))
+            .catch(() => ({ source: 'Google - Leadership', snippets: '' }))
+        );
+        
+        // Query 3: Funding & financials
+        searchPromises.push(
+          searchWithSerper(`${companyName} funding raised investors valuation revenue`)
+            .then(result => ({
+              source: 'Google - Financials',
+              snippets: result.organic?.slice(0, 5).map(r => `${r.title}: ${r.snippet}`).join('\n') || ''
+            }))
+            .catch(() => ({ source: 'Google - Financials', snippets: '' }))
+        );
+        
+        // Query 4: Products & technology
+        searchPromises.push(
+          searchWithSerper(`${companyName} products services technology stack features`)
+            .then(result => ({
+              source: 'Google - Products',
+              snippets: result.organic?.slice(0, 5).map(r => `${r.title}: ${r.snippet}`).join('\n') || ''
+            }))
+            .catch(() => ({ source: 'Google - Products', snippets: '' }))
+        );
+        
+        // Query 5: News & press
+        searchPromises.push(
+          searchWithSerper(`${companyName} news press releases recent updates announcements`)
+            .then(result => ({
+              source: 'Google - News',
+              snippets: result.organic?.slice(0, 5).map(r => `${r.title}: ${r.snippet}`).join('\n') || ''
+            }))
+            .catch(() => ({ source: 'Google - News', snippets: '' }))
+        );
+        
+        // Query 6: Hiring & jobs
+        searchPromises.push(
+          searchWithSerper(`${companyName} careers jobs hiring open positions`)
+            .then(result => ({
+              source: 'Google - Hiring',
+              snippets: result.organic?.slice(0, 5).map(r => `${r.title}: ${r.snippet}`).join('\n') || ''
+            }))
+            .catch(() => ({ source: 'Google - Hiring', snippets: '' }))
+        );
       }
       
-      // Tavily Search - Good for detailed content
+      // Tavily Search - OPTIONAL for enhanced data
       if (process.env.TAVILY_API_KEY) {
-        const tavilyQueries = [
-          `${companyName} company profile funding revenue`,
-          `${companyName} latest news updates 2024 2025`
-        ];
-        
-        tavilyQueries.forEach(query => {
-          searchPromises.push(
-            tvly.search(query, { maxResults: 5, searchDepth: 'advanced', includeAnswer: true })
-              .then(result => ({
-                source: 'Tavily',
-                query,
-                answer: result.answer || '',
-                snippets: result.results?.map(r => r.content).join('\n') || ''
-              }))
-              .catch(() => ({ source: 'Tavily', query, answer: '', snippets: '' }))
-          );
-        });
+        hasSearchAPI = true;
+        const tavilyQuery = `${companyName} company profile latest information`;
+        searchPromises.push(
+          tvly.search(tavilyQuery, { maxResults: 3, searchDepth: 'basic', includeAnswer: true })
+            .then(result => ({
+              source: 'Tavily',
+              answer: result.answer || '',
+              snippets: result.results?.slice(0, 3).map(r => r.content).join('\n') || ''
+            }))
+            .catch(() => ({ source: 'Tavily', answer: '', snippets: '' }))
+        );
       }
       
-      const searchResults = await Promise.all(searchPromises);
-      
-      // Compile all search results
-      searchContext = searchResults.map((result, idx) => {
-        if (result.source === 'Google') {
-          return `--- Google Search ${idx + 1} ---\n${result.knowledgeGraph}\n${result.snippets}`;
-        } else {
-          return `--- Tavily Search ---\nAnswer: ${result.answer}\n${result.snippets}`;
-        }
-      }).join('\n\n');
-      
-      console.log(`✅ Real-time search completed for: ${companyName}`);
+      if (hasSearchAPI) {
+        const searchResults = await Promise.all(searchPromises);
+        
+        // Compile all search results with clear categorization
+        searchContext = searchResults.map((result) => {
+          let section = `\n=== ${result.source} ===\n`;
+          if (result.knowledgeGraph) {
+            section += `KNOWLEDGE GRAPH:\n${result.knowledgeGraph}\n\n`;
+          }
+          if (result.answer) {
+            section += `AI SUMMARY:\n${result.answer}\n\n`;
+          }
+          if (result.snippets) {
+            section += `WEB RESULTS:\n${result.snippets}`;
+          }
+          return section;
+        }).filter(r => r.length > 50).join('\n\n');
+        
+        console.log(`✅ Enhanced search completed with ${searchResults.length} queries`);
+      } else {
+        console.log('💡 Running in AI-only mode (no search APIs configured - costs reduced)');
+        searchContext = `Limited data available. Use general business knowledge about: ${companyName}\n${companyWebsite ? `Website: ${companyWebsite}` : ''}\n${emailDomain ? `Email domain: ${emailDomain}` : ''}`;
+      }
     } catch (searchError) {
-      console.warn('⚠️ Search failed, using LLM knowledge:', searchError.message);
-      searchContext = 'Real-time search unavailable. Use general knowledge only.';
+      console.warn('⚠️ Search failed, using AI knowledge only:', searchError.message);
+      searchContext = `No real-time data available. Research ${companyName} using general knowledge.\n${companyWebsite ? `Website: ${companyWebsite}` : ''}\n${emailDomain ? `Email domain: ${emailDomain}` : ''}`;
     }
 
-    // Step 2: Build the prompt with real-time context
-    const prompt = `You are a Professional Company Research AI Agent.
+    // Step 2: Build the AI prompt with enhanced search context
+    const prompt = `You are a Professional Company Research AI Agent with access to real-time web search data.
 
-Your task is to generate a structured, factual, and concise Company Research Report using the REAL-TIME SEARCH RESULTS provided below, combined with your general business knowledge.
+Your task is to generate a COMPLETE, FACTUAL, and DATA-RICH Company Research Report using the comprehensive search results provided below.
 
-=== REAL-TIME SEARCH RESULTS (USE THIS DATA) ===
+=== REAL-TIME SEARCH RESULTS (PRIMARY DATA SOURCE) ===
 ${searchContext}
 === END OF SEARCH RESULTS ===
 
-STRICT RULES (MANDATORY):
-❌ Do NOT hallucinate facts, numbers, funding, revenue, or clients
-❌ Do NOT invent financial figures or internal data
-❌ Do NOT include investment advice
-❌ Do NOT mention how you found information (no reasoning leaks)
-❌ Do NOT include URLs, sources, or citations
-✅ Use the real-time search data above to fill in accurate information
-✅ If data is still unknown after search, write exactly: "Not publicly available"
-✅ If company is public, funding rounds must be written as "Not applicable (public company)"
-✅ If company is private, funding info may be "Not publicly available" unless found in search
-✅ Use cautious, professional language
-✅ Keep tone neutral, analytical, executive-ready
-❌ Do NOT add or remove sections from the format
+CRITICAL INSTRUCTIONS (MUST FOLLOW):
 
-INPUT:
+DATA EXTRACTION & INFERENCE RULES:
+✅ EXTRACT ALL data from search results first - this is your primary source
+✅ Use knowledge graph data when available (most reliable)
+✅ Cross-reference multiple snippets to verify facts
+✅ INFER intelligently from context:
+   • "celebrating 10 years in 2023" = founded 2013
+   • "raised Series A" = Startup stage
+   • "based in NYC" or email domain location = Headquarters
+   • News about "hiring engineers" = Engineering department hiring
+   • "launched new product" = key milestone in timeline
+   • Company domain age can be estimated from earliest web mentions
+   • Competitors can be inferred from industry + target market
+✅ Extract names: CEO, founders, executives from any mention in search results
+✅ Technology stack: Infer from job postings, blog posts, or product descriptions
+✅ Web traffic: If startup with funding, estimate "Growing" trend; if no recent news, "Stable"
+✅ For SWOT: Always complete based on available data + industry knowledge
+✅ Timeline: Build from funding rounds, product launches, and news mentions
+
+SMART DEFAULTS (Use when partial data exists):
+✅ Founded Year: If funding round known (e.g., "Seed 2023"), estimate founded 2022-2023
+✅ Key People: Check search results for ANY name mentions (co-founder, CEO, team)
+✅ Competitors: Research similar companies in same industry/geography
+✅ Remote vs On-site: For tech startups, typically "Hybrid (60% remote)" unless stated
+✅ Domain Age: Estimate from company founded year (same or 1 year earlier)
+✅ Traffic Trend: Funded startup = "Growing", established company = "Stable"
+
+ABSOLUTE RULES:
+❌ NEVER write "Not publicly available" without thoroughly checking search results first
+❌ Do NOT hallucinate specific numbers (revenue, exact metrics) if not in search results
+❌ Do NOT include URLs, citations, or "according to..." phrases
+❌ Do NOT mention your research process
+✅ Only use "Not publicly available" for: exact revenue, exact traffic numbers, specific internal data
+✅ For public companies, funding = "Not applicable (public company)"
+✅ Keep language professional, analytical, and concise (2-4 points per section)
+
+INPUT CONTEXT:
 - Company Name: ${companyName}
 ${companyWebsite ? `- Company Website: ${companyWebsite}` : ''}
 ${emailDomain ? `- Email Domain: ${emailDomain}` : ''}
 
-OUTPUT FORMAT (MUST MATCH EXACTLY - USE THESE SECTION HEADERS):
+⚠️ CRITICAL: Generate EXACTLY these 9 sections in this EXACT order. DO NOT add, remove, or rename sections. DO NOT generate duplicate sections.
+
+REQUIRED OUTPUT FORMAT (EXACTLY 9 SECTIONS - NO MORE, NO LESS):
 
 [SECTION:Company Overview]
 - Company Name:
@@ -992,16 +1220,26 @@ OUTPUT FORMAT (MUST MATCH EXACTLY - USE THESE SECTION HEADERS):
 - Website:
 - Brief Description (2–3 lines):
 
-[SECTION:Visual Timeline]
-- Key Milestones:
-- Major Events by Year:
-- Growth Timeline:
-
 [SECTION:Product Summary]
 - Core Products/Services:
 - Product Categories:
 - Unique Selling Points:
 - Target Users:
+
+[SECTION:Financial Information]
+- Funding Status:
+- Total Funding Raised:
+- Latest Funding Round:
+- Key Investors:
+- Revenue Estimate:
+- Profitability Status:
+
+[SECTION:Key People]
+- Founders:
+- CEO/MD:
+- Key Executives:
+- Board Members:
+- Notable Team Members:
 
 [SECTION:Competitors]
 - Direct Competitors:
@@ -1015,76 +1253,16 @@ OUTPUT FORMAT (MUST MATCH EXACTLY - USE THESE SECTION HEADERS):
 - Digital Channels:
 - Online Reputation:
 
-[SECTION:Technology Used]
-- Frontend Technologies:
-- Backend Technologies:
-- Cloud/Infrastructure:
-- AI/ML Tools:
-- Analytics Tools:
-
-[SECTION:Search Keyword Analysis]
-- Top Branded Keywords:
-- Industry Keywords:
-- SEO Performance:
-- Search Visibility:
-
-[SECTION:Hiring & Openings]
-- Current Job Openings:
-- Departments Hiring:
-- Hiring Locations:
-- Growth Signals from Hiring:
-
-[SECTION:Financial Information]
-- Funding Status:
-- Total Funding Raised:
-- Latest Funding Round:
-- Key Investors:
-- Revenue Estimate:
-- Profitability Status:
-
-[SECTION:Job Opening Trends]
-- Historical Hiring Trends:
-- Peak Hiring Periods:
-- Role Categories in Demand:
-- Remote vs On-site Ratio:
-
-[SECTION:Web Traffic]
-- Monthly Visitors Estimate:
-- Traffic Trend (Growing/Stable/Declining):
-- Top Traffic Sources:
-- Geographic Distribution:
-
-[SECTION:Key People]
-- Founders:
-- CEO/MD:
-- Key Executives:
-- Board Members:
-- Notable Team Members:
-
 [SECTION:Recent News & Press]
 - Latest News Headlines:
 - Press Releases:
 - Media Mentions:
 - Industry Recognition:
 
-[SECTION:Website Changes]
-- Recent Website Updates:
-- New Features Added:
-- Design Changes:
-- Content Updates:
-
-[SECTION:Acquisitions]
-- Companies Acquired:
-- Acquisition Timeline:
-- Strategic Rationale:
-- Integration Status:
-
-[SECTION:Domains]
-- Primary Domain:
-- Secondary Domains:
-- Domain Age:
-- Related Properties:
-
+[SECTION:SWOT Analysis]
+- Strengths:
+- Weaknesses:
+- Opportunities:
 [SECTION:SWOT Analysis]
 - Strengths:
 - Weaknesses:
@@ -1092,9 +1270,12 @@ OUTPUT FORMAT (MUST MATCH EXACTLY - USE THESE SECTION HEADERS):
 - Threats:
 
 [SECTION:Final Summary]
-Provide a short executive-style conclusion summarizing company maturity, growth trajectory, and partnership readiness.
+(2-3 paragraph executive summary of the company, its market position, growth trajectory, and key insights for sales teams)
 
-Generate the report now:`;
+⚠️ END OF REQUIRED SECTIONS - DO NOT ADD ANY MORE SECTIONS AFTER THIS
+
+Generate the report now following the exact format above:`;
+
 
     // Call Groq via LangChain
     const response = await llm.invoke([
@@ -1180,6 +1361,13 @@ app.listen(PORT, async () => {
   if (process.env.BYPASS_AUTH === 'true') {
     logger.warn(`⚠️  WARNING: Authentication bypass is ENABLED! (BYPASS_AUTH=true)`);
     logger.warn(`⚠️  This should ONLY be used in development. NEVER in production!`);
+  }
+
+  // Start momentum decay background job (runs every hour)
+  if (process.env.MOMENTUM_DECAY_ENABLED !== 'false') {
+    const decayIntervalMs = parseInt(process.env.MOMENTUM_DECAY_INTERVAL_MS) || 60 * 60 * 1000;
+    startMomentumDecayScheduler(decayIntervalMs);
+    logger.info(`⏰ Momentum decay job scheduled (interval: ${decayIntervalMs / 1000 / 60} minutes)`);
   }
 
   // Get lead count from database

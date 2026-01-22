@@ -1,26 +1,104 @@
-import { useState } from 'react'
-import { Search, Filter, Download, RefreshCw, Zap } from 'lucide-react'
+import { useState, useMemo, useCallback } from 'react'
+import { Search, Filter, Download, RefreshCw, Zap, TrendingUp, Activity, FileSpreadsheet, FileText } from 'lucide-react'
 import LeadDetailModal from './LeadDetailModal'
 
-const LeadsList = ({ leads, onLeadUpdate, onRefresh, onTrackActivity, onRecalculateScore }) => {
+// Export leads to CSV
+const exportToCSV = (leads, filename = 'leads_export.csv') => {
+  const headers = [
+    'ID', 'Name', 'Email', 'Phone', 'Company', 'Job Title', 'Industry',
+    'Score', 'Classification', 'Momentum Level', 'Source', 'Status',
+    'Last Activity', 'Created At'
+  ]
+
+  const csvRows = [
+    headers.join(','),
+    ...leads.map(lead => [
+      lead.id,
+      `"${(lead.name || '').replace(/"/g, '""')}"`,
+      `"${(lead.email || '').replace(/"/g, '""')}"`,
+      `"${(lead.phone || '').replace(/"/g, '""')}"`,
+      `"${(lead.company || '').replace(/"/g, '""')}"`,
+      `"${(lead.jobTitle || '').replace(/"/g, '""')}"`,
+      `"${(lead.industry || '').replace(/"/g, '""')}"`,
+      lead.score || 0,
+      lead.classification || '',
+      lead.momentum?.level || 'none',
+      lead.source || '',
+      lead.status || '',
+      lead.lastActivity ? new Date(lead.lastActivity).toISOString() : '',
+      lead.createdAt ? new Date(lead.createdAt).toISOString() : ''
+    ].join(','))
+  ]
+
+  const csvContent = csvRows.join('\n')
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+// Export leads to JSON
+const exportToJSON = (leads, filename = 'leads_export.json') => {
+  const exportData = leads.map(lead => ({
+    id: lead.id,
+    name: lead.name,
+    email: lead.email,
+    phone: lead.phone,
+    company: lead.company,
+    jobTitle: lead.jobTitle,
+    industry: lead.industry,
+    score: lead.score,
+    classification: lead.classification,
+    momentum: lead.momentum,
+    scoreBreakdown: lead.scoreBreakdown,
+    source: lead.source,
+    status: lead.status,
+    lastActivity: lead.lastActivity,
+    createdAt: lead.createdAt
+  }))
+
+  const jsonContent = JSON.stringify(exportData, null, 2)
+  const blob = new Blob([jsonContent], { type: 'application/json' })
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = filename
+  link.click()
+  URL.revokeObjectURL(link.href)
+}
+
+const LeadsList = ({ leads, onLeadUpdate, onRefresh, onTrackActivity, onRecalculateScore, apiKey }) => {
   const [selectedLead, setSelectedLead] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [filterClassification, setFilterClassification] = useState('all')
   const [recalculatingId, setRecalculatingId] = useState(null)
+  const [showExportMenu, setShowExportMenu] = useState(false)
 
-  // Filter leads based on search and classification
-  const filteredLeads = leads.filter(lead => {
-    const matchesSearch =
-      lead.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      lead.company.toLowerCase().includes(searchTerm.toLowerCase())
+  // Memoize filtered leads to avoid recalculation on every render
+  const filteredLeads = useMemo(() => {
+    return leads.filter(lead => {
+      const matchesSearch =
+        lead.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        lead.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        lead.company.toLowerCase().includes(searchTerm.toLowerCase())
 
-    const matchesFilter =
-      filterClassification === 'all' ||
-      lead.classification === filterClassification
+      const matchesFilter =
+        filterClassification === 'all' ||
+        lead.classification === filterClassification
 
-    return matchesSearch && matchesFilter
-  })
+      return matchesSearch && matchesFilter
+    })
+  }, [leads, searchTerm, filterClassification])
+
+  // Memoize stats to avoid recalculating 5 filter operations on every render
+  const stats = useMemo(() => ({
+    total: leads.length,
+    hot: leads.filter(l => l.classification === 'hot').length,
+    warm: leads.filter(l => l.classification === 'warm').length,
+    qualified: leads.filter(l => l.classification === 'qualified').length,
+    cold: leads.filter(l => l.classification === 'cold').length
+  }), [leads])
 
   // Get classification badge color
   const getClassificationColor = (classification) => {
@@ -35,6 +113,20 @@ const LeadsList = ({ leads, onLeadUpdate, onRefresh, onTrackActivity, onRecalcul
         return 'bg-blue-100 text-blue-800'
       default:
         return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  // Get momentum indicator color
+  const getMomentumColor = (level) => {
+    switch (level) {
+      case 'high':
+        return 'text-red-500'
+      case 'medium':
+        return 'text-orange-500'
+      case 'low':
+        return 'text-yellow-500'
+      default:
+        return 'text-gray-300'
     }
   }
 
@@ -102,41 +194,62 @@ const LeadsList = ({ leads, onLeadUpdate, onRefresh, onTrackActivity, onRecalcul
               Refresh
             </button>
 
-            <button className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-2">
-              <Download className="h-4 w-4" />
-              Export
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setShowExportMenu(!showExportMenu)}
+                className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 flex items-center gap-2"
+              >
+                <Download className="h-4 w-4" />
+                Export
+              </button>
+              {showExportMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg z-10 border border-gray-200">
+                  <button
+                    onClick={() => {
+                      exportToCSV(filteredLeads, `leads_${new Date().toISOString().split('T')[0]}.csv`)
+                      setShowExportMenu(false)
+                    }}
+                    className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                  >
+                    <FileSpreadsheet className="h-4 w-4" />
+                    Export as CSV
+                  </button>
+                  <button
+                    onClick={() => {
+                      exportToJSON(filteredLeads, `leads_${new Date().toISOString().split('T')[0]}.json`)
+                      setShowExportMenu(false)
+                    }}
+                    className="w-full px-4 py-2 text-left text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Export as JSON
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Stats Summary */}
+        {/* Stats Summary - Using memoized stats */}
         <div className="mt-4 grid grid-cols-2 sm:grid-cols-5 gap-4">
           <div className="text-center">
-            <div className="text-2xl font-bold text-gray-900">{leads.length}</div>
+            <div className="text-2xl font-bold text-gray-900">{stats.total}</div>
             <div className="text-xs text-gray-600">Total Leads</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-red-600">
-              {leads.filter(l => l.classification === 'hot').length}
-            </div>
+            <div className="text-2xl font-bold text-red-600">{stats.hot}</div>
             <div className="text-xs text-gray-600">Hot</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-orange-600">
-              {leads.filter(l => l.classification === 'warm').length}
-            </div>
+            <div className="text-2xl font-bold text-orange-600">{stats.warm}</div>
             <div className="text-xs text-gray-600">Warm</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-yellow-600">
-              {leads.filter(l => l.classification === 'qualified').length}
-            </div>
+            <div className="text-2xl font-bold text-yellow-600">{stats.qualified}</div>
             <div className="text-xs text-gray-600">Qualified</div>
           </div>
           <div className="text-center">
-            <div className="text-2xl font-bold text-blue-600">
-              {leads.filter(l => l.classification === 'cold').length}
-            </div>
+            <div className="text-2xl font-bold text-blue-600">{stats.cold}</div>
             <div className="text-xs text-gray-600">Cold</div>
           </div>
         </div>
@@ -200,11 +313,23 @@ const LeadsList = ({ leads, onLeadUpdate, onRefresh, onTrackActivity, onRecalcul
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900">{lead.name}</div>
+                  <div className="text-sm font-medium text-gray-900">
+                    {lead.name && lead.name !== 'N/A' ? lead.name : (
+                      <span className="text-gray-400 italic">
+                        {lead.email?.split('@')[0] || 'Unknown'}
+                      </span>
+                    )}
+                  </div>
                   <div className="text-sm text-gray-500">{lead.email}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm text-gray-900">{lead.company}</div>
+                  <div className="text-sm text-gray-900">
+                    {lead.company && lead.company !== 'N/A' ? lead.company : (
+                      <span className="text-gray-400 italic">
+                        {lead.email?.split('@')[1]?.split('.')[0].charAt(0).toUpperCase() + lead.email?.split('@')[1]?.split('.')[0].slice(1) || 'Unknown'}
+                      </span>
+                    )}
+                  </div>
                   <div className="text-sm text-gray-500">{lead.companySize} employees</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -212,9 +337,31 @@ const LeadsList = ({ leads, onLeadUpdate, onRefresh, onTrackActivity, onRecalcul
                   <div className="text-sm text-gray-500">{lead.industry}</div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getClassificationColor(lead.classification)}`}>
-                    {lead.classification.toUpperCase()}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`px-3 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getClassificationColor(lead.classification)}`}>
+                      {lead.classification?.toUpperCase() || 'N/A'}
+                    </span>
+                    {/* Momentum indicator */}
+                    {lead.momentum?.level && lead.momentum.level !== 'none' && (
+                      <TrendingUp 
+                        className={`h-4 w-4 ${getMomentumColor(lead.momentum.level)}`}
+                        title={`Momentum: ${lead.momentum.level} (${lead.momentum.actionsLast24h || 0} actions today)`}
+                      />
+                    )}
+                    {/* Surge indicator */}
+                    {lead.momentum?.surgeDetected && (
+                      <Activity 
+                        className="h-4 w-4 text-red-500 animate-pulse"
+                        title="Activity surge detected!"
+                      />
+                    )}
+                  </div>
+                  {/* Classification reason */}
+                  {lead.classificationReason && (
+                    <div className="text-xs text-gray-500 mt-1 max-w-xs truncate" title={lead.classificationReason}>
+                      {lead.classificationReason}
+                    </div>
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                   {lead.source}
@@ -242,6 +389,7 @@ const LeadsList = ({ leads, onLeadUpdate, onRefresh, onTrackActivity, onRecalcul
           onUpdate={onLeadUpdate}
           onTrackActivity={onTrackActivity}
           onRecalculateScore={onRecalculateScore}
+          apiKey={apiKey}
         />
       )}
     </div>

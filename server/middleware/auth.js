@@ -43,17 +43,6 @@ export function verifyToken(token) {
 // Authentication middleware
 export async function authenticateToken(req, res, next) {
   try {
-    // DEVELOPMENT ONLY: Allow bypass if BYPASS_AUTH is enabled
-    if (process.env.BYPASS_AUTH === 'true' && process.env.NODE_ENV === 'development') {
-      console.warn('⚠️  WARNING: Authentication bypass is ENABLED! This should NEVER happen in production!');
-      req.user = {
-        userId: 1,
-        email: 'dev@bypass.com',
-        role: 'admin'
-      };
-      return next();
-    }
-
     // Get token from Authorization header
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN

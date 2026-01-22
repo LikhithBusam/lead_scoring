@@ -60,30 +60,67 @@ async function getCurrentMonthUsage(tenantId) {
 }
 
 /**
- * Step 138: Increment API calls counter
+ * Step 138: Increment API calls counter (ATOMIC version - fixes race condition)
+ * Uses RPC function if available, falls back to upsert
  * @param {string} tenantId - Tenant UUID
  * @returns {Promise<object>} Updated usage record
  */
 export async function incrementApiCalls(tenantId) {
   try {
-    const usage = await getCurrentMonthUsage(tenantId);
-    
-    // If no usage record (graceful fallback), skip update
-    if (!usage || !usage.usage_id) {
-      return null;
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+
+    // Try to use RPC function for atomic increment (if exists)
+    const { data: rpcData, error: rpcError } = await supabase.rpc('increment_api_calls', {
+      p_tenant_id: tenantId,
+      p_month: month,
+      p_year: year
+    });
+
+    if (!rpcError) {
+      return rpcData;
     }
 
+    // Fallback: Use upsert with ON CONFLICT for atomicity
+    // This is more reliable than read-then-write
     const { data, error } = await supabase
       .from('tenant_usage')
-      .update({
-        api_calls_made: (usage.api_calls_made || 0) + 1,
-        last_updated: new Date().toISOString()
+      .upsert({
+        tenant_id: tenantId,
+        period_month: month,
+        period_year: year,
+        month: month,
+        year: year,
+        api_calls_made: 1,
+        leads_created: 0,
+        storage_used_mb: 0,
+        last_updated: now.toISOString()
+      }, {
+        onConflict: 'tenant_id,period_month,period_year',
+        ignoreDuplicates: false
       })
-      .eq('usage_id', usage.usage_id)
       .select()
       .single();
 
-    if (error) throw error;
+    // If upsert failed (constraint might be different), try the old approach
+    if (error) {
+      const usage = await getCurrentMonthUsage(tenantId);
+      if (!usage || !usage.usage_id) return null;
+
+      const { data: updateData } = await supabase
+        .from('tenant_usage')
+        .update({
+          api_calls_made: (usage.api_calls_made || 0) + 1,
+          last_updated: now.toISOString()
+        })
+        .eq('usage_id', usage.usage_id)
+        .select()
+        .single();
+
+      return updateData;
+    }
+
     return data;
   } catch (error) {
     console.error('Error incrementing API calls:', error);
@@ -93,24 +130,36 @@ export async function incrementApiCalls(tenantId) {
 }
 
 /**
- * Step 139: Increment leads created counter
+ * Step 139: Increment leads created counter (ATOMIC version - fixes race condition)
  * @param {string} tenantId - Tenant UUID
  * @returns {Promise<object>} Updated usage record
  */
 export async function incrementLeadsCreated(tenantId) {
   try {
-    const usage = await getCurrentMonthUsage(tenantId);
-    
-    // If no usage record (graceful fallback), skip update
-    if (!usage || !usage.usage_id) {
-      return null;
+    const now = new Date();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+
+    // Try to use RPC function for atomic increment (if exists)
+    const { data: rpcData, error: rpcError } = await supabase.rpc('increment_leads_created', {
+      p_tenant_id: tenantId,
+      p_month: month,
+      p_year: year
+    });
+
+    if (!rpcError) {
+      return rpcData;
     }
+
+    // Fallback: get current and update (less atomic but works)
+    const usage = await getCurrentMonthUsage(tenantId);
+    if (!usage || !usage.usage_id) return null;
 
     const { data, error } = await supabase
       .from('tenant_usage')
       .update({
         leads_created: (usage.leads_created || 0) + 1,
-        last_updated: new Date().toISOString()
+        last_updated: now.toISOString()
       })
       .eq('usage_id', usage.usage_id)
       .select()

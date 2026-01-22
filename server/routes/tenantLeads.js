@@ -8,6 +8,11 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { authenticateTenant } from '../middleware/tenantAuth.js';
 import { calculateLeadScoreMultiTenant } from '../utils/multiTenantScoring.js';
+import { 
+  calculateMomentum, 
+  getIntelligentClassification, 
+  generateClassificationReason 
+} from '../utils/momentumCalculator.js';
 
 dotenv.config();
 
@@ -20,58 +25,113 @@ const supabase = createClient(
 
 /**
  * Step 58: GET /api/v1/leads - Get all leads for authenticated tenant
+ * Supports pagination with ?page=1&limit=50 (max 100)
+ * Now includes momentum data for intelligent classification
  */
 router.get('/leads', authenticateTenant, async (req, res) => {
   try {
     const tenant = req.tenant;
 
-    // Query leads filtered by tenant_id (RLS automatically applies this filter)
-    const { data: leads, error } = await supabase
+    // Pagination parameters
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const offset = (page - 1) * limit;
+
+    // Query leads with activities for real-time momentum calculation
+    let leads, error, count;
+    
+    // Query with activities for momentum calculation
+    const result = await supabase
       .from('leads')
       .select(`
         *,
-        contact:contacts(*),
-        company:companies(*),
-        score:lead_scores(*),
-        activities:lead_activities(count)
-      `)
+        contact:contacts(first_name, last_name, email, phone, job_title),
+        company:companies(company_name, industry, employee_count),
+        score:lead_scores(
+          total_score, 
+          demographic_score, 
+          behavioral_score, 
+          negative_score, 
+          score_classification
+        ),
+        activities:lead_activities(activity_type, activity_subtype, activity_timestamp, created_at)
+      `, { count: 'exact' })
       .eq('tenant_id', tenant.tenant_id)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    leads = result.data;
+    error = result.error;
+    count = result.count;
 
     if (error) {
       throw error;
     }
 
-    // Transform leads for response
-    const transformedLeads = leads.map(lead => ({
-      id: lead.lead_id,
-      name: `${lead.contact?.first_name || ''} ${lead.contact?.last_name || ''}`.trim() || 'N/A',
-      email: lead.contact?.email || 'N/A',
-      phone: lead.contact?.phone || '',
-      company: lead.company?.company_name || 'N/A',
-      jobTitle: lead.contact?.job_title || '',
-      industry: lead.company?.industry || '',
-      score: lead.score?.[0]?.total_score || 0,
-      classification: lead.score?.[0]?.score_classification || 'unqualified',
-      scoreBreakdown: {
-        demographic: lead.score?.[0]?.demographic_score || 0,
-        behavioral: lead.score?.[0]?.behavioral_score || 0,
-        negative: lead.score?.[0]?.negative_score || 0
-      },
-      lastActivity: lead.last_activity_date || lead.created_at,
-      createdAt: lead.created_at,
-      source: lead.lead_source,
-      status: lead.lead_status,
-      stage: lead.current_stage,
-      activityCount: lead.activities?.[0]?.count || 0
-    }));
+    // Transform leads for response with real-time momentum calculation
+    const transformedLeads = leads.map(lead => {
+      // Get stored score data
+      const storedScore = lead.score?.[0]?.total_score || 0;
+      
+      // Calculate momentum in real-time from activities
+      const activities = lead.activities || [];
+      const momentum = calculateMomentum(activities);
+      
+      // Get intelligent classification based on score AND momentum
+      const classification = getIntelligentClassification(storedScore, momentum);
+      
+      // Generate human-readable reason
+      const classificationReason = generateClassificationReason({
+        score: storedScore,
+        momentum,
+        classification
+      });
+
+      return {
+        id: lead.lead_id,
+        name: `${lead.contact?.first_name || ''} ${lead.contact?.last_name || ''}`.trim() || 'N/A',
+        email: lead.contact?.email || 'N/A',
+        phone: lead.contact?.phone || '',
+        company: lead.company?.company_name || 'N/A',
+        jobTitle: lead.contact?.job_title || '',
+        industry: lead.company?.industry || '',
+        score: storedScore,
+        classification,
+        classificationReason,
+        momentum: {
+          score: momentum.score,
+          level: momentum.level,
+          actionsLast24h: momentum.actionsLast24h,
+          actionsLast72h: momentum.actionsLast72h,
+          lastHighIntentAction: momentum.lastHighIntentAction,
+          surgeDetected: momentum.surgeDetected
+        },
+        scoreBreakdown: {
+          demographic: lead.score?.[0]?.demographic_score || 0,
+          behavioral: lead.score?.[0]?.behavioral_score || 0,
+          negative: lead.score?.[0]?.negative_score || 0
+        },
+        lastActivity: lead.last_activity_date || lead.created_at,
+        createdAt: lead.created_at,
+        source: lead.lead_source,
+        status: lead.lead_status,
+        stage: lead.current_stage,
+        activityCount: activities.length
+      };
+    });
 
     res.json({
       success: true,
       tenant_id: tenant.tenant_id,
       tenant_name: tenant.company_name,
-      count: transformedLeads.length,
-      leads: transformedLeads
+      leads: transformedLeads,
+      pagination: {
+        page,
+        limit,
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limit),
+        hasMore: offset + leads.length < (count || 0)
+      }
     });
 
   } catch (error) {
@@ -198,11 +258,17 @@ router.post('/leads/:id/recalculate-score', authenticateTenant, async (req, res)
 
 /**
  * Step 60: GET /api/v1/leads/:id/activities - Get activity timeline for lead
+ * Supports pagination with ?page=1&limit=50 (max 100)
  */
 router.get('/leads/:id/activities', authenticateTenant, async (req, res) => {
   try {
     const tenant = req.tenant;
     const leadId = parseInt(req.params.id);
+
+    // Pagination parameters
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50));
+    const offset = (page - 1) * limit;
 
     // Verify lead belongs to tenant and get contact_id
     const { data: lead } = await supabase
@@ -218,14 +284,14 @@ router.get('/leads/:id/activities', authenticateTenant, async (req, res) => {
       });
     }
 
-    // Get activities filtered by tenant and lead OR contact
-    // This ensures we get activities even if lead_id wasn't set on some
-    const { data: activities, error } = await supabase
+    // Get activities filtered by tenant and lead OR contact with pagination
+    const { data: activities, error, count } = await supabase
       .from('lead_activities')
-      .select('*')
+      .select('activity_id, activity_type, activity_subtype, page_url, points_earned, activity_timestamp, activity_details, website_id', { count: 'exact' })
       .eq('tenant_id', tenant.tenant_id)
       .or(`lead_id.eq.${leadId},contact_id.eq.${lead.contact_id}`)
-      .order('activity_timestamp', { ascending: false });
+      .order('activity_timestamp', { ascending: false })
+      .range(offset, offset + limit - 1);
 
     if (error) {
       throw error;
@@ -246,8 +312,14 @@ router.get('/leads/:id/activities', authenticateTenant, async (req, res) => {
     res.json({
       success: true,
       lead_id: leadId,
-      count: transformedActivities.length,
-      activities: transformedActivities
+      activities: transformedActivities,
+      pagination: {
+        page,
+        limit,
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limit),
+        hasMore: offset + activities.length < (count || 0)
+      }
     });
 
   } catch (error) {
@@ -304,6 +376,37 @@ router.get('/websites/:id/ctas', authenticateTenant, async (req, res) => {
     console.error('Error fetching CTAs:', error);
     res.status(500).json({
       error: 'Failed to fetch CTAs',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/v1/scoring-rules - Get behavioral scoring rules for Activity Simulator
+ * Returns rules from scoring_rules_behavioral table
+ */
+router.get('/scoring-rules', authenticateTenant, async (req, res) => {
+  try {
+    // Fetch all scoring rules in parallel
+    const [demographicRes, behavioralRes, negativeRes, thresholdsRes] = await Promise.all([
+      supabase.from('scoring_rules_demographic').select('*').eq('is_active', true).order('priority_order'),
+      supabase.from('scoring_rules_behavioral').select('*').eq('is_active', true),
+      supabase.from('scoring_rules_negative').select('*').eq('is_active', true),
+      supabase.from('scoring_thresholds').select('*').eq('is_active', true).order('min_score', { ascending: false })
+    ]);
+
+    res.json({
+      success: true,
+      demographic: demographicRes.data || [],
+      behavioral: behavioralRes.data || [],
+      negative: negativeRes.data || [],
+      thresholds: thresholdsRes.data || []
+    });
+
+  } catch (error) {
+    console.error('Error fetching scoring rules:', error);
+    res.status(500).json({
+      error: 'Failed to fetch scoring rules',
       message: error.message
     });
   }

@@ -2,11 +2,17 @@
  * Multi-Tenant Scoring Engine
  * Steps 49-57: Calculate scores using tenant-specific and system-wide rules
  * Step 132-133: Added Redis caching for performance optimization
+ * Updated: Momentum-based intelligent classification
  */
 
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { getCache, setCache, getScoringRulesKey, getPageConfigKey, getCTAConfigKey } from './cache.js';
+import { 
+  calculateMomentum, 
+  getIntelligentClassification, 
+  generateClassificationReason 
+} from './momentumCalculator.js';
 
 dotenv.config();
 
@@ -205,12 +211,33 @@ export async function calculateLeadScoreMultiTenant(tenantId, leadId) {
     // ===== CALCULATE TOTAL =====
     const totalScore = Math.max(0, demographicScore + behavioralScore + negativeScore);
 
-    // Classify lead
-    const classification = classifyLeadScore(totalScore);
+    // ===== MOMENTUM-BASED CLASSIFICATION =====
+    // Calculate momentum from recent activities
+    const momentum = calculateMomentum(lead.activities || []);
+    
+    // Get intelligent classification based on score AND momentum
+    const classification = getIntelligentClassification(totalScore, momentum);
+    
+    // Generate human-readable reason
+    const classificationReason = generateClassificationReason({
+      score: totalScore,
+      momentum,
+      classification
+    });
 
     const scoreData = {
       totalScore,
       classification,
+      classificationReason,
+      momentum: {
+        score: momentum.score,
+        level: momentum.level,
+        actionsLast24h: momentum.actionsLast24h,
+        actionsLast72h: momentum.actionsLast72h,
+        actionsLast7d: momentum.actionsLast7d,
+        surgeDetected: momentum.surgeDetected,
+        lastHighIntentAction: momentum.lastHighIntentAction
+      },
       breakdown: {
         demographic: demographicScore,
         behavioral: behavioralScore,
@@ -220,7 +247,7 @@ export async function calculateLeadScoreMultiTenant(tenantId, leadId) {
       calculatedAt: new Date().toISOString()
     };
 
-    // Step 57: Save score to database
+    // Step 57: Save score to database (now includes momentum)
     await saveScoreToDatabase(tenantId, leadId, scoreData);
 
     return scoreData;
@@ -309,7 +336,8 @@ function evaluateCondition(value, operator, conditionValue) {
 }
 
 /**
- * Classify lead based on total score
+ * Classify lead based on total score (legacy - kept for backward compatibility)
+ * @deprecated Use getIntelligentClassification from momentumCalculator instead
  */
 function classifyLeadScore(score) {
   if (score >= 80) return 'hot';
@@ -319,14 +347,55 @@ function classifyLeadScore(score) {
 }
 
 /**
- * Step 57: Save calculated score to database
+ * Step 57: Save calculated score to database (with momentum fields)
  */
 async function saveScoreToDatabase(tenantId, leadId, scoreData) {
   try {
-    // Upsert lead_scores
-    await supabase
+    // Build upsert data including momentum fields
+    const upsertData = {
+      tenant_id: tenantId,
+      lead_id: leadId,
+      demographic_score: scoreData.breakdown.demographic,
+      behavioral_score: scoreData.breakdown.behavioral,
+      negative_score: scoreData.breakdown.negative,
+      total_score: scoreData.totalScore,
+      score_classification: scoreData.classification,
+      last_calculated_at: scoreData.calculatedAt,
+      updated_at: scoreData.calculatedAt
+    };
+
+    // Add momentum fields if available
+    if (scoreData.momentum) {
+      upsertData.momentum_score = scoreData.momentum.score || 0;
+      upsertData.momentum_level = scoreData.momentum.level || 'none';
+      upsertData.actions_last_24h = scoreData.momentum.actionsLast24h || 0;
+      upsertData.actions_last_72h = scoreData.momentum.actionsLast72h || 0;
+      upsertData.momentum_updated_at = new Date().toISOString();
+      
+      if (scoreData.momentum.lastHighIntentAction) {
+        upsertData.last_high_intent_action = scoreData.momentum.lastHighIntentAction;
+      }
+      if (scoreData.momentum.surgeDetected !== undefined) {
+        upsertData.surge_detected = scoreData.momentum.surgeDetected;
+      }
+    }
+
+    // Add classification reason if available
+    if (scoreData.classificationReason) {
+      upsertData.classification_reason = scoreData.classificationReason;
+    }
+
+    // Upsert lead_scores - try with momentum fields, fall back to basic if columns don't exist
+    const { error: upsertError } = await supabase
       .from('lead_scores')
-      .upsert({
+      .upsert(upsertData, {
+        onConflict: 'lead_id'
+      });
+
+    // If momentum columns don't exist, retry with basic fields only
+    if (upsertError && upsertError.code === '42703') {
+      console.log('⚠️ Momentum columns not found in lead_scores. Run migration 11_add_momentum_fields.sql');
+      const basicUpsertData = {
         tenant_id: tenantId,
         lead_id: leadId,
         demographic_score: scoreData.breakdown.demographic,
@@ -336,9 +405,14 @@ async function saveScoreToDatabase(tenantId, leadId, scoreData) {
         score_classification: scoreData.classification,
         last_calculated_at: scoreData.calculatedAt,
         updated_at: scoreData.calculatedAt
-      }, {
-        onConflict: 'lead_id'
-      });
+      };
+      
+      await supabase
+        .from('lead_scores')
+        .upsert(basicUpsertData, {
+          onConflict: 'lead_id'
+        });
+    }
 
     // Insert into score_history
     await supabase

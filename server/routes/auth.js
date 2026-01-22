@@ -201,6 +201,24 @@ router.post('/login', async (req, res) => {
     // Generate JWT token (include tenant_id for company context)
     const token = generateToken(user.user_id, user.email, user.role, user.tenant_id);
 
+    // Set JWT in httpOnly cookie for security
+    res.cookie('auth_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+    });
+
+    // Set tenant API key in httpOnly cookie if available
+    if (tenant?.api_key) {
+      res.cookie('tenant_api_key', tenant.api_key, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'strict',
+        maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+      });
+    }
+
     res.json({
       message: 'Login successful',
       user: {
@@ -212,14 +230,14 @@ router.post('/login', async (req, res) => {
         tenantId: user.tenant_id
       },
       // Include tenant info if user belongs to a company
+      // Note: API key is now set in httpOnly cookie, not exposed in response
       tenant: tenant ? {
         tenantId: tenant.tenant_id,
         companyName: tenant.company_name,
         domain: tenant.domain,
-        planType: tenant.plan_type,
-        apiKey: tenant.api_key
+        planType: tenant.plan_type
       } : null,
-      token
+      token // Still return token for clients that need it in headers
     });
   } catch (error) {
     console.error('Login error:', error);
@@ -228,6 +246,21 @@ router.post('/login', async (req, res) => {
       code: 'LOGIN_ERROR'
     });
   }
+});
+
+// Logout - Clear cookies
+router.post('/logout', (req, res) => {
+  res.clearCookie('auth_token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict'
+  });
+  res.clearCookie('tenant_api_key', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict'
+  });
+  res.json({ message: 'Logged out successfully' });
 });
 
 // Get current user profile

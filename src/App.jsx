@@ -21,20 +21,20 @@ function App() {
   const [activeTab, setActiveTab] = useState('dashboard')
 
   // Load saved company from localStorage on mount
+  // Note: API key is stored in httpOnly cookie by server, we only store company ID locally
   useEffect(() => {
     const savedCompanyId = localStorage.getItem('currentCompanyId')
-    const savedApiKey = localStorage.getItem('currentApiKey')
 
-    if (savedCompanyId && savedApiKey) {
-      // Verify the saved company still exists
-      fetchCompanyProfile(savedApiKey).then(company => {
+    if (savedCompanyId) {
+      // Try to fetch company profile using httpOnly cookie (set by login)
+      // The API key cookie is handled automatically by the browser
+      fetchCompanyProfileFromCookie().then(company => {
         if (company) {
-          setCurrentCompany({ ...company, api_key: savedApiKey })
+          setCurrentCompany(company)
           setShowCompanySelector(false)
         } else {
-          // Saved company no longer valid
+          // Session expired or invalid
           localStorage.removeItem('currentCompanyId')
-          localStorage.removeItem('currentApiKey')
           setShowCompanySelector(true)
         }
         setIsLoadingCompanies(false)
@@ -45,15 +45,16 @@ function App() {
     }
   }, [])
 
-  // Fetch company profile
+  // Fetch company profile using API key from header (for initial setup)
   const fetchCompanyProfile = async (apiKey) => {
     try {
       const response = await fetch('/api/v1/tenants/me', {
-        headers: { 'X-API-Key': apiKey }
+        headers: { 'X-API-Key': apiKey },
+        credentials: 'include' // Include cookies
       })
       const data = await response.json()
       if (data.success) {
-        return data.tenant
+        return { ...data.tenant, api_key: apiKey }
       }
       return null
     } catch (error) {
@@ -62,11 +63,30 @@ function App() {
     }
   }
 
+  // Fetch company profile using httpOnly cookie (for session restoration)
+  const fetchCompanyProfileFromCookie = async () => {
+    try {
+      const response = await fetch('/api/v1/tenants/me', {
+        credentials: 'include' // Include httpOnly cookies
+      })
+      const data = await response.json()
+      if (data.success) {
+        return data.tenant
+      }
+      return null
+    } catch (error) {
+      console.error('Error fetching company from cookie:', error)
+      return null
+    }
+  }
+
   // Handle company selection
   const handleSelectCompany = (company) => {
     setCurrentCompany(company)
+    // Only store company ID locally - API key is in httpOnly cookie
     localStorage.setItem('currentCompanyId', company.tenant_id)
-    localStorage.setItem('currentApiKey', company.api_key)
+    // Note: We keep api_key in state for backward compatibility with components
+    // but the httpOnly cookie is the primary auth mechanism
     setShowCompanySelector(false)
     setActiveTab('dashboard')
     // Reset all state for new company
@@ -81,10 +101,19 @@ function App() {
   }
 
   // Handle logout / clear company
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      // Call logout endpoint to clear httpOnly cookies
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include'
+      })
+    } catch (error) {
+      console.error('Logout error:', error)
+    }
+
     setCurrentCompany(null)
     localStorage.removeItem('currentCompanyId')
-    localStorage.removeItem('currentApiKey')
     setShowCompanySelector(true)
     setLeads([])
   }
@@ -116,16 +145,33 @@ function App() {
     }
   }, [currentCompany, fetchLeads])
 
-  // Real-time polling every 15 seconds
+  // Real-time polling every 30 seconds (increased from 15s to reduce server load)
   useEffect(() => {
     if (!isPolling || !currentCompany) return
 
     const intervalId = setInterval(() => {
       fetchLeads()
-    }, 15000)
+    }, 30000) // Changed from 15000 to 30000
 
     return () => clearInterval(intervalId)
   }, [fetchLeads, isPolling, currentCompany])
+
+  // Pause polling when tab is hidden (reduces unnecessary API calls)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // Tab is hidden - pause polling
+        setIsPolling(false)
+      } else if (currentCompany) {
+        // Tab is visible again - resume polling and refresh data
+        setIsPolling(true)
+        fetchLeads() // Immediate refresh when returning to tab
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [currentCompany, fetchLeads])
 
   // Lead update handler
   const handleLeadUpdate = async (updatedLead) => {
@@ -333,6 +379,7 @@ function App() {
               onRefresh={fetchLeads}
               onTrackActivity={trackActivity}
               onRecalculateScore={recalculateScore}
+              apiKey={currentCompany.api_key}
             />
           )
         ) : activeTab === 'simulator' ? (
